@@ -1,0 +1,20 @@
+{
+	"credentialScope": "gargiolastech-ai-tooling-dev",
+	"environment": "dev",
+	"infisicalHost": "https://app.infisical.com",
+	"riderPath": "C:\\Program Files\\JetBrains\\JetBrains Rider 2025.1\\bin\\rider64.exe",
+	"projects": [
+		{
+			"key": "wcm",
+			"name": "GargiolasTech DevEx WCM",
+			"solutionPath": "C:\\dev\\gargiolastech-devex-wcm",
+			"infisicalProjectId": "REPLACE_WITH_INFISICAL_PROJECT_ID"
+		},
+		{
+			"key": "quoteflow",
+			"name": "QuoteFlow",
+			"solutionPath": "C:\\dev\\quoteflow",
+			"infisicalProjectId": "REPLACE_WITH_INFISICAL_PROJECT_ID"
+		}
+	]
+}
