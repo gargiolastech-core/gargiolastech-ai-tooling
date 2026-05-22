@@ -107,12 +107,8 @@ function Validate-LauncherConfig {
         throw "Configurazione non valida: infisicalHost è obbligatorio."
     }
 
-    if ([string]::IsNullOrWhiteSpace($Config.riderPath)) {
-        throw "Configurazione non valida: riderPath è obbligatorio."
-    }
-
-    if (-not (Test-Path $Config.riderPath)) {
-        throw "Rider non trovato nel percorso configurato: $($Config.riderPath)"
+    if ($null -eq $Config.ides) {
+    throw "Configurazione non valida: ides è obbligatorio."
     }
 
     if ($null -eq $Config.projects -or $Config.projects.Count -eq 0) {
@@ -206,13 +202,40 @@ if ($List) {
 }
 
 Show-Projects -Projects $config.projects
-$selected = Select-Project -Projects $config.projects -RequestedKey $ProjectKey
 
-$enginePath = Resolve-ScriptPath -FileName "Start-Rider-With-AiSecrets.ps1"
+$selected = Select-Project `
+    -Projects $config.projects `
+    -RequestedKey $ProjectKey
+
+$ideKey = $selected.ide
+
+if ([string]::IsNullOrWhiteSpace($ideKey)) {
+    throw "Il progetto '$($selected.key)' non ha il campo ide valorizzato."
+}
+
+$ideConfig = $Config.ides.$ideKey
+
+if ($null -eq $ideConfig) {
+    throw "IDE '$ideKey' non configurato nella sezione ides."
+}
+
+$idePath = $ideConfig.path
+
+if ([string]::IsNullOrWhiteSpace($idePath)) {
+    throw "Path non configurato per IDE '$ideKey'."
+}
+
+if (-not (Test-Path $idePath)) {
+    throw "IDE '$ideKey' non trovato nel percorso: $idePath"
+}
+
+$enginePath = Resolve-ScriptPath -FileName "Start-Ide-With-AiSecrets.ps1"
 
 Write-Section "Avvio progetto"
 Write-Host "Progetto: $($selected.name)"
 Write-Host "Key:      $($selected.key)"
+Write-Host "IDE:      $ideKey"
+Write-Host "IDE Path: $idePath"
 Write-Host "Path:     $($selected.solutionPath)"
 Write-Host ""
 
@@ -224,9 +247,10 @@ Write-Host ""
     -Environment $config.environment `
     -CredentialScope $config.credentialScope `
     -InfisicalHost $config.infisicalHost `
-    -RiderPath $config.riderPath `
+    -IdeType $ideKey `
+    -IdePath $idePath `
     -SolutionPath $selected.solutionPath
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Start-Rider-With-AiSecrets.ps1 terminato con ExitCode $LASTEXITCODE."
+    throw "Start-Ide-With-AiSecrets.ps1 terminato con ExitCode $LASTEXITCODE."
 }
