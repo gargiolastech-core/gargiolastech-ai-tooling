@@ -17,7 +17,7 @@ if (-not (Test-Path $LauncherPath)) {
     throw "Launcher non trovato: $LauncherPath"
 }
 
-$iconPath = Resolve-RepositoryPath "..\..\images\Icona.png"
+$iconPath = Resolve-RepositoryPath "..\..\images\Icona.ico"
 
 if (-not (Test-Path $iconPath)) {
     throw "Icona non trovata: $iconPath"
