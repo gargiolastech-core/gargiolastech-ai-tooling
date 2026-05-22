@@ -8,7 +8,10 @@ param(
 
     [string] $InfisicalHost = "https://app.infisical.com",
 
-    [string] $RiderPath = "$env:LOCALAPPDATA\Programs\Rider\bin\rider64.exe",
+    [string] $IdeType = "rider",
+
+    [Parameter(Mandatory = $true)]
+    [string] $IdePath,
 
     [string] $SolutionPath = "."
 )
@@ -19,7 +22,6 @@ $ErrorActionPreference = "Stop"
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-using System.Text;
 
 public static class WinCredManager
 {
@@ -84,6 +86,8 @@ public static class WinCredManager
 }
 "@
 
+# lascia qui invariata tutta la tua classe WinCredManager
+
 function Write-Section {
     param([string] $Title)
 
@@ -144,30 +148,19 @@ function Export-InfisicalEnvFile {
     }
 }
 
-Write-Section "AI Rider Bootstrap"
+Write-Section "AI IDE Bootstrap"
 
 Assert-CommandExists `
     -CommandName "infisical" `
     -InstallHint "Installare Infisical CLI e assicurarsi che sia presente nel PATH."
 
 Assert-PathExists `
-    -Path $RiderPath `
-    -Description "Rider"
+    -Path $IdePath `
+    -Description "IDE '$IdeType'"
 
 Assert-PathExists `
     -Path $SolutionPath `
     -Description "SolutionPath"
-
-$clientId = [WinCredManager]::ReadSecret("$CredentialScope-client-id")
-$clientSecret = [WinCredManager]::ReadSecret("$CredentialScope-client-secret")
-
-if ([string]::IsNullOrWhiteSpace($clientId)) {
-    throw "ClientId non trovato nel Credential Manager. Scope: $CredentialScope"
-}
-
-if ([string]::IsNullOrWhiteSpace($clientSecret)) {
-    throw "ClientSecret non trovato nel Credential Manager. Scope: $CredentialScope"
-}
 
 $runtimeRoot = Join-Path `
     $env:USERPROFILE `
@@ -182,6 +175,23 @@ if (-not (Test-Path $runtimeRoot)) {
 
 $continueEnvPath = Join-Path $runtimeRoot "continue.env"
 $aiderEnvPath = Join-Path $runtimeRoot "aider.env"
+
+# lascia invariati:
+# - lettura Credential Manager
+# - login Infisical
+# - generazione continue.env
+# - generazione aider.env
+
+$clientId = [WinCredManager]::ReadSecret("$CredentialScope-client-id")
+$clientSecret = [WinCredManager]::ReadSecret("$CredentialScope-client-secret")
+
+if ([string]::IsNullOrWhiteSpace($clientId)) {
+    throw "ClientId non trovato nel Credential Manager. Scope: $CredentialScope"
+}
+
+if ([string]::IsNullOrWhiteSpace($clientSecret)) {
+    throw "ClientSecret non trovato nel Credential Manager. Scope: $CredentialScope"
+}
 
 Write-Section "Login Infisical"
 
@@ -221,10 +231,45 @@ Write-Host ""
 Write-Host "Aider env:"
 Write-Host $aiderEnvPath
 
-Write-Section "Avvio Rider"
+function Import-DotEnvFile {
+    param([string] $Path)
 
-$env:CONTINUE_ENV_FILE = $continueEnvPath
-$env:AIDER_ENV_FILE = $aiderEnvPath
+    if (-not (Test-Path $Path)) {
+        throw "Env file non trovato: $Path"
+    }
+
+    Get-Content $Path | ForEach-Object {
+
+        $line = $_.Trim()
+
+        if (
+            [string]::IsNullOrWhiteSpace($line) -or
+            $line.StartsWith("#")
+        ) {
+            return
+        }
+
+        $parts = $line -split "=", 2
+
+        if ($parts.Count -ne 2) {
+            return
+        }
+
+        $key = $parts[0].Trim()
+        $value = $parts[1].Trim()
+
+        [Environment]::SetEnvironmentVariable(
+            $key,
+            $value,
+            "Process"
+        )
+    }
+}
+
+Write-Section "Avvio IDE"
+
+Import-DotEnvFile -Path $continueEnvPath
+Import-DotEnvFile -Path $aiderEnvPath
 
 $solutionFiles = @(
     Get-ChildItem `
@@ -248,15 +293,15 @@ else {
     $targetPath = $SolutionPath
 
     Write-Host ""
-    Write-Host "Trovate più solution. Apertura directory per selezione Rider:"
+    Write-Host "Trovate più solution. Apertura directory per selezione IDE:"
     foreach ($solution in $solutionFiles) {
         Write-Host "- $($solution.Name)"
     }
 }
 
 Start-Process `
-    -FilePath $RiderPath `
+    -FilePath $IdePath `
     -ArgumentList "`"$targetPath`""
 
 Write-Host ""
-Write-Host "Rider avviato correttamente."
+Write-Host "IDE '$IdeType' avviato correttamente."
