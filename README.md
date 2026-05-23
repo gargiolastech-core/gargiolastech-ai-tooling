@@ -32,6 +32,8 @@ Windows Credential Manager     ← Client ID + Client Secret (bootstrap, one-sho
 |---|---|
 | `scripts/windows/bootstrap-ai-tooling.cmd` | Wizard interattivo per il bootstrap iniziale delle credenziali in Windows Credential Manager |
 | `scripts/windows/Set-InfisicalCredential.ps1` | Scrive Machine Identity Client ID e Client Secret in WCM tramite `cmdkey` |
+| `scripts/windows/Install-Aider.cmd` | Wrapper double-clickable per `Install-Aider.ps1` |
+| `scripts/windows/Install-Aider.ps1` | Provisioner: installa Aider in un virtualenv Python isolato (`~/.venvs/aider-env`) |
 | `scripts/windows/Start-AiIde.cmd` | Entry point per uso quotidiano: seleziona il progetto e avvia l'IDE corrispondente con i segreti AI iniettati |
 | `scripts/windows/Start-AiIde.ps1` | Dispatcher multi-progetto / multi-IDE: legge `projects.json`, valida la configurazione, risolve l'IDE e delega all'engine |
 | `scripts/windows/Start-Ide-With-AiSecrets.ps1` | Engine core IDE-agnostic: legge WCM, autentica con Infisical, esporta i segreti, lancia l'IDE selezionato |
@@ -53,7 +55,15 @@ bootstrap-ai-tooling.cmd
 
 Inserire **Client ID** e **Client Secret** della Machine Identity Infisical quando richiesto. Le credenziali vengono archiviate in Windows Credential Manager — mai su file.
 
-### 2. Avvio quotidiano
+### 2. Installazione Aider (una volta per workstation)
+
+```cmd
+Install-Aider.cmd
+```
+
+Crea un virtualenv Python isolato in `~/.venvs/aider-env` e installa Aider al suo interno. Richiede Python 3.12 con Python Launcher (`py.exe`). Parametri opzionali: `-PythonVersion`, `-VenvPath`, `-ForceRecreate`.
+
+### 3. Avvio quotidiano
 
 ```cmd
 Start-AiIde.cmd
@@ -61,7 +71,7 @@ Start-AiIde.cmd
 
 Il launcher mostra la lista dei progetti configurati e avvia l'IDE associato a ciascun progetto, con i segreti AI iniettati.
 
-### 3. Collegamento desktop (opzionale)
+### 4. Collegamento desktop (opzionale)
 
 ```powershell
 .\Install-AiIdeDesktopShortcut.ps1
@@ -115,6 +125,7 @@ Aggiungere un nuovo IDE significa aggiungere una entry alla sezione `ides` e ref
 | Windows | 10 / 11 (64-bit) |
 | Windows PowerShell | 5.1+ |
 | Infisical CLI | 0.20.0+ |
+| Python 3.12 (con Python Launcher `py.exe`) | per `Install-Aider.ps1` |
 | IDE supportato | JetBrains Rider 2024.1+ · Visual Studio 2022 · (altri configurabili) |
 | Continue.dev plugin | Da marketplace dell'IDE selezionato |
 
@@ -124,6 +135,8 @@ Installazione Infisical CLI:
 scoop bucket add org https://github.com/Infisical/scoop-infisical.git
 scoop install infisical
 ```
+
+Installazione Python (se non presente): scaricare l'installer ufficiale da [python.org](https://www.python.org/downloads/) assicurandosi di selezionare "Install launcher for all users (recommended)" e "Add Python to PATH".
 
 ---
 
@@ -148,6 +161,7 @@ La documentazione tecnica completa è disponibile in [`docs/DOCUMENTATION.md`](d
 - Spiegazione di ogni script PowerShell
 - Configurazione multi-IDE (Rider, Visual Studio, estensione ad altri editor)
 - Integrazione Continue e Aider
+- Provisioning automatizzato di Aider in virtualenv isolato (razionale architetturale e operativo)
 - Procedura di rotazione delle credenziali
 - Troubleshooting e FAQ
 

@@ -1,9 +1,14 @@
 # GargiolasTech AI Tooling — Documentazione Tecnica Enterprise
 
 > **Repository:** `gargiolastech-ai-tooling`
-> **Versione documento:** 2.0 — multi-IDE support
+> **Versione documento:** 2.1 — Aider installer integrato
 > **Audience:** Backend Developers · DevOps Engineers · Platform Engineers · Security Engineers
 > **Classificazione:** Documentazione architetturale e operativa di riferimento
+
+> ### Cosa è cambiato rispetto alla v2.0
+> - Aggiunti gli script `Install-Aider.cmd` e `Install-Aider.ps1` per il **provisioning automatizzato di Aider** in un virtualenv Python isolato (`~/.venvs/aider-env`).
+> - L'installazione di Aider entra ora ufficialmente nel flusso di setup standard: non è più un passo manuale demandato al developer.
+> - Documentate le decisioni di design: virtualenv isolato, Python launcher (`py -<version>`), idempotenza con `-ForceRecreate`.
 
 > ### Cosa è cambiato rispetto alla v1.0
 > - Il launcher è ora **IDE-agnostic**: supporta JetBrains Rider, Visual Studio 2022 e qualsiasi altro IDE configurabile dichiarativamente.
@@ -746,6 +751,8 @@ gargiolastech-ai-tooling/
 │   └── windows/                     ← Tutti gli script PowerShell e CMD
 │       ├── bootstrap-ai-tooling.cmd
 │       ├── Install-AiIdeDesktopShortcut.ps1
+│       ├── Install-Aider.cmd
+│       ├── Install-Aider.ps1
 │       ├── Set-InfisicalCredential.ps1
 │       ├── Start-AiIde.cmd
 │       ├── Start-AiIde.ps1
@@ -765,6 +772,8 @@ gargiolastech-ai-tooling/
 | `images/Icona.png` | Asset binario | Versione PNG dell'icona per uso non-shortcut (es. documentazione, web) | — | ❌ |
 | `scripts/windows/bootstrap-ai-tooling.cmd` | Wrapper CMD | UX-friendly wrapper su `Set-InfisicalCredential.ps1` con scope predefinito | ✅ | ❌ (interattivo) |
 | `scripts/windows/Set-InfisicalCredential.ps1` | Script core | Scrive Client ID + Client Secret in WCM tramite `cmdkey` | ✅ | ❌ (riceve secret come param) |
+| `scripts/windows/Install-Aider.cmd` | Wrapper CMD | Wrapper double-clickable per `Install-Aider.ps1`, propaga argomenti con `%*` | ✅ | ❌ |
+| `scripts/windows/Install-Aider.ps1` | Provisioner | Installa Aider in un virtualenv Python isolato (`~/.venvs/aider-env`); supporta `-PythonVersion`, `-VenvPath`, `-ForceRecreate` | ✅ | ❌ |
 | `scripts/windows/Start-AiIde.cmd` | Wrapper CMD | Lancia `Start-AiIde.ps1` bypassando ExecutionPolicy | ✅ | ❌ |
 | `scripts/windows/Start-AiIde.ps1` | Launcher | Multi-project / multi-IDE chooser, valida config, risolve IDE, delega a `Start-Ide-With-AiSecrets.ps1` | ✅ | ❌ |
 | `scripts/windows/Start-Ide-With-AiSecrets.ps1` | Engine | Cuore del runtime IDE-agnostic: WCM → Infisical login → export → spawn IDE | ✅ | ⚠️ (manipola segreti in-memory) |
@@ -803,10 +812,16 @@ flowchart TB
         SETCRED["Set-InfisicalCredential.ps1"]
     end
 
+    subgraph LayerProvisioning["Layer Provisioning (one-shot)"]
+        AIDERCMD["Install-Aider.cmd"]
+        AIDERPS["Install-Aider.ps1"]
+    end
+
     CMD --> LAUNCH
     SHORT -.->|"installa collegamento a"| CMD
     LAUNCH --> ENG
     BOOT --> SETCRED
+    AIDERCMD --> AIDERPS
 ```
 
 **Responsabilità separate**:
@@ -814,7 +829,8 @@ flowchart TB
 - **UX Layer**: si occupa solo di doppio-click ed exit code utenti-friendly.
 - **Orchestration Layer**: legge config, valida, sceglie il progetto, chiama l'engine.
 - **Engine Layer**: parlare con WCM, Infisical, filesystem runtime e lanciare Rider.
-- **Bootstrap Layer**: scritto una sola volta nella vita di una workstation; isolato per chiarezza operativa.
+- **Bootstrap Layer**: scritto una sola volta nella vita di una workstation; isolato per chiarezza operativa. Memorizza le credenziali Machine Identity in WCM.
+- **Provisioning Layer**: prepara le dipendenze runtime (Aider in virtualenv Python). Eseguito una volta per workstation; rieseguibile per upgrade.
 
 Vantaggi:
 
@@ -836,10 +852,13 @@ Vantaggi:
 | Windows PowerShell | 5.1+ | `$PSVersionTable.PSVersion` |
 | Git for Windows | 2.30+ | `git --version` |
 | Infisical CLI | 0.20.0+ | `infisical --version` |
+| Python Launcher (`py`) + Python 3.12 | Vedi nota | `py -3.12 --version` |
 | JetBrains Rider | 2024.1+ | Apertura dal menu Start |
 | Account Infisical | — | Login web UI |
 | Continue.dev plugin | Da JetBrains Marketplace | Installazione in Rider |
-| Aider | Python 3.10+ via `pip install aider-chat` (opzionale) | `aider --version` |
+| Aider | Installato via `Install-Aider.cmd` (Sezione 11.5) | `& "$HOME\.venvs\aider-env\Scripts\aider.exe" --version` |
+
+> **Nota Python**: il Python Launcher (`py.exe`) viene installato di default dall'installer ufficiale di Python su Windows (python.org). Lo script `Install-Aider.ps1` lo richiede per supportare workstation con più versioni di Python installate contemporaneamente. La versione esatta richiesta è parametrizzabile tramite `-PythonVersion` (default `3.12`).
 
 ### 11.2 Installazione Infisical CLI
 
@@ -881,11 +900,69 @@ Vedi le sezioni dedicate:
 - **Sezione 12** — creazione del progetto Infisical (web UI).
 - **Sezione 13** — creazione e configurazione della Machine Identity.
 - **Sezione 14** — bootstrap delle credenziali tramite `bootstrap-ai-tooling.cmd`.
-- **Sezione 11.5** — primo avvio del launcher e configurazione `projects.json`.
+- **Sezione 11.5** — installazione di Aider via `Install-Aider.cmd`.
+- **Sezione 11.6** — primo avvio del launcher e configurazione `projects.json`.
+- **Sezione 11.7** — installazione del collegamento desktop.
 
-### 11.5 Primo avvio del launcher
+### 11.5 Installazione di Aider
 
-Dopo aver completato il bootstrap (Sezione 14), il primo avvio del launcher crea automaticamente lo scheletro di `projects.json`:
+Aider è un componente runtime indipendente dall'IDE (Sezione 20). Viene installato in un **virtualenv Python isolato** per evitare contaminazione del Python di sistema.
+
+```powershell
+cd C:\dev\gargiolastech-ai-tooling\scripts\windows
+.\Install-Aider.cmd
+```
+
+**Output atteso (riassunto):**
+
+```
+===========================================
+ GargiolasTech Aider Installer
+===========================================
+
+[INFO] Script root: C:\dev\gargiolastech-ai-tooling\scripts\windows
+[INFO] Repository root: C:\dev\gargiolastech-ai-tooling
+
+[INFO] Checking Python 3.12...
+[OK] Python 3.12.x
+
+[INFO] Creating virtualenv: C:\Users\<utente>\.venvs\aider-env
+[INFO] Upgrading pip tooling...
+[INFO] Installing/upgrading aider-chat...
+[INFO] Verifying Aider installation...
+aider 0.x.y
+
+===========================================
+ Aider installed successfully
+===========================================
+```
+
+**Parametri opzionali**:
+
+| Parametro | Default | Significato |
+|---|---|---|
+| `-PythonVersion` | `3.12` | Versione Python richiesta (sintassi `py -<version>`). Cambiare se la workstation usa Python 3.11 o 3.13. |
+| `-VenvPath` | `$HOME\.venvs\aider-env` | Path del virtualenv. Personalizzare in caso di vincoli di storage. |
+| `-ForceRecreate` | (off) | Switch: ricrea da zero il virtualenv anche se già esistente. Utile dopo upgrade di Python major. |
+
+Esempi:
+
+```powershell
+# Versione Python diversa
+.\Install-Aider.ps1 -PythonVersion 3.11
+
+# Forza ricreazione del venv (es. dopo upgrade Python)
+.\Install-Aider.ps1 -ForceRecreate
+
+# Virtualenv in path custom
+.\Install-Aider.ps1 -VenvPath "D:\tools\aider-env"
+```
+
+> Dettagli implementativi e razionale architetturale dell'installer Aider: vedi Sezione 20.6.
+
+### 11.6 Primo avvio del launcher
+
+Dopo aver completato il bootstrap (Sezione 14) e l'installazione di Aider (Sezione 11.5), il primo avvio del launcher crea automaticamente lo scheletro di `projects.json`:
 
 ```powershell
 cd C:\dev\gargiolastech-ai-tooling\scripts\windows
@@ -916,7 +993,7 @@ Poi riesegui il launcher.
 
 Il file generato va personalizzato (Sezione 18). Dopo la modifica, il successivo lancio mostrerà la lista dei progetti disponibili.
 
-### 11.6 Installazione del collegamento desktop
+### 11.7 Installazione del collegamento desktop
 
 ```powershell
 .\Install-AiIdeDesktopShortcut.ps1
@@ -926,10 +1003,10 @@ Output:
 
 ```
 Collegamento creato:
-C:\Users\<utente>\Desktop\Rider AI.lnk
+C:\Users\<utente>\Desktop\AI IDE Launcher.lnk
 ```
 
-Da quel momento in poi, il workflow standard è: **doppio click sull'icona → seleziona progetto → Rider si apre con i segreti AI caricati**.
+Da quel momento in poi, il workflow standard è: **doppio click sull'icona → seleziona progetto → l'IDE configurato per quel progetto si apre con i segreti AI caricati**.
 
 ---
 
@@ -1869,6 +1946,150 @@ Aider tipicamente avvia una connessione al provider AI e mantiene la sessione ap
 
 **Mitigazione**: dopo una rotazione di emergenza, chiudere e riaprire l'IDE per propagare le nuove chiavi (perché il file `.env` viene rigenerato all'avvio del launcher).
 
+### 20.6 Installer Aider: razionale architetturale
+
+Aider è un pacchetto Python (`aider-chat` su PyPI). L'installazione "ingenua" sarebbe `pip install aider-chat` nel Python di sistema, ma in contesti enterprise questo approccio presenta diverse problematiche.
+
+#### Problemi dell'installazione globale
+
+| Problema | Conseguenza |
+|---|---|
+| Pollution del global site-packages | Aider trascina ~80 dipendenze (tiktoken, litellm, openai, anthropic, tree-sitter, …) che possono entrare in conflitto con altri tool Python installati sulla stessa macchina |
+| Mancanza di isolamento di versione | Un upgrade aggressivo (`pip install --upgrade aider-chat`) può fare downgrade transitivo di librerie usate da altri progetti |
+| Permessi | Su Windows, l'installazione globale può richiedere admin se Python è in `Program Files`; il virtualenv vive sempre nel profilo utente |
+| Riproducibilità | Setup non riproducibili tra workstation se il Python di sistema diverge per minor version |
+| Cleanup | Disinstallare Aider richiede `pip uninstall` di decine di dipendenze; con un venv basta cancellare la cartella |
+
+#### Soluzione adottata
+
+L'installer adotta un **virtualenv dedicato** in `~/.venvs/aider-env`, ottenendo:
+
+1. **Isolamento totale**: nessun impatto sul Python di sistema o su altri venv.
+2. **Idempotenza**: ri-eseguire l'installer non rompe nulla; un eventuale upgrade è gestito da `pip install --upgrade`.
+3. **Disinstallabilità**: `Remove-Item -Recurse $VenvPath` rimuove tutto.
+4. **Eseguibile diretto**: lo script invoca `$VenvPath\Scripts\aider.exe` senza dover attivare il venv tramite script di activation. Robusto per uso non-interattivo.
+
+```mermaid
+flowchart TB
+    subgraph PySys["Python di sistema"]
+        SitePkg["site-packages globali"]
+    end
+
+    subgraph PyVenv["~/.venvs/aider-env (isolato)"]
+        VenvPkg["site-packages venv<br/>aider-chat + ~80 dependencies"]
+        VenvExe["Scripts\aider.exe"]
+        VenvPy["Scripts\python.exe"]
+    end
+
+    PythonLauncher["py -3.12<br/>(Python Launcher Windows)"]
+    PythonLauncher -->|"-m venv"| PyVenv
+    PythonLauncher -.->|"chiama"| PySys
+    Engine["Start-Ide-With-AiSecrets.ps1"] -.->|"genera"| EnvFile["aider.env"]
+    EnvFile -.->|"$AIDER_ENV_FILE"| VenvExe
+
+    style PySys fill:#b71c1c,stroke:#fff,color:#fff
+    style PyVenv fill:#1b5e20,stroke:#fff,color:#fff
+```
+
+### 20.7 Anatomia di `Install-Aider.ps1`
+
+```powershell
+param(
+    [string] $PythonVersion = "3.12",
+    [string] $VenvPath = "$HOME\.venvs\aider-env",
+    [switch] $ForceRecreate
+)
+```
+
+#### Pipeline di esecuzione
+
+| # | Step | Comando chiave | Failure mode |
+|---|---|---|---|
+| 1 | Verifica Python Launcher | `Get-Command py` | Throw se assente |
+| 2 | Verifica versione Python | `py -<version> --version` | Throw se la versione richiesta non è installata |
+| 3 | (Opzionale) Rimozione venv esistente | `Remove-Item -Recurse $VenvPath` (solo se `-ForceRecreate`) | — |
+| 4 | Creazione directory parent | `New-Item -ItemType Directory $venvParent` | — |
+| 5 | Creazione virtualenv | `py -<version> -m venv $VenvPath` | Throw se il path non è scrivibile |
+| 6 | Upgrade pip tooling | `python.exe -m pip install --upgrade pip setuptools wheel` | Throw su exit code ≠ 0 |
+| 7 | Installazione/upgrade Aider | `python.exe -m pip install --upgrade aider-chat` | Throw su exit code ≠ 0 |
+| 8 | Verifica eseguibile | `Test-Path $AiderExe` | Throw se assente |
+| 9 | Smoke test | `$AiderExe --version` | Throw su exit code ≠ 0 |
+
+#### Decisioni di design notevoli
+
+**Perché `py -<version>` invece di `python.exe` diretto?**
+
+Il [Python Launcher per Windows](https://docs.python.org/3/using/windows.html#launcher) è installato con qualsiasi installazione recente di Python da python.org. Espone una sintassi unica per selezionare una specifica versione di Python tra quelle installate:
+
+```powershell
+py -3.12 --version    # Forza Python 3.12 anche se 3.13 è il default
+py -3.13 --version    # Forza Python 3.13
+```
+
+Questo è cruciale in workstation enterprise dove convivono **più versioni di Python** (es. 3.11 per progetti legacy, 3.12 per nuovi progetti). Chiamare `python.exe` direttamente risolverebbe alla versione nel `PATH`, che è imprevedibile.
+
+**Perché upgrade esplicito di `pip setuptools wheel`?**
+
+L'installer di venv crea il virtualenv con la versione di pip bundled con Python. Su installazioni Python più vecchie di qualche mese, pip può essere obsoleto. L'upgrade preventivo evita warning durante l'installazione e abilita feature recenti (es. resolver migliorato di pip 23+).
+
+**Perché lo script non setta `PATH`?**
+
+Il PATH globale è una risorsa scarsa e contesa. Aggiungere `$VenvPath\Scripts` al `PATH` avrebbe effetti collaterali:
+
+- pollution per altri tool che chiamano `python.exe`;
+- conflitti se l'utente ha già un Python diverso nel PATH;
+- richiesta di restart della shell.
+
+La soluzione è chiamare `aider.exe` con path assoluto sempre, sia nelle istruzioni utente sia nel launcher.
+
+### 20.8 Uso quotidiano post-installazione
+
+#### Invocazione manuale di Aider
+
+Dal terminale integrato dell'IDE o da una qualsiasi PowerShell:
+
+```powershell
+& "$HOME\.venvs\aider-env\Scripts\aider.exe" `
+    --env-file $env:AIDER_ENV_FILE `
+    src\MyProject.cs
+```
+
+#### Alias persistente in `$PROFILE`
+
+Per rendere l'invocazione più ergonomica, definire un alias in `$PROFILE`:
+
+```powershell
+function aider {
+    & "$HOME\.venvs\aider-env\Scripts\aider.exe" --env-file $env:AIDER_ENV_FILE @args
+}
+```
+
+In questo modo `aider src/MyProject.cs` invoca automaticamente l'eseguibile corretto con il file di environment runtime.
+
+#### Aggiornamento di Aider
+
+Ri-eseguire `Install-Aider.cmd` esegue idempotentemente `pip install --upgrade aider-chat`. Non occorre `-ForceRecreate` salvo in caso di problemi:
+
+```powershell
+.\Install-Aider.cmd
+```
+
+#### Ricreazione completa del virtualenv
+
+Caso d'uso: upgrade del Python da 3.12 a 3.13. Il virtualenv è legato al Python con cui è stato creato e va ricostruito:
+
+```powershell
+.\Install-Aider.ps1 -PythonVersion 3.13 -ForceRecreate
+```
+
+#### Disinstallazione
+
+```powershell
+Remove-Item -Recurse -Force "$HOME\.venvs\aider-env"
+```
+
+Nessun residuo nel registry, nessun PATH cleanup necessario.
+
 ---
 
 ## 21. Integrazione IDE (Rider, Visual Studio, …)
@@ -2310,6 +2531,12 @@ E lanciare con `-Verbose`:
 | `ExecutionPolicy bloccata` | Policy macchina restrittiva | Lanciare CMD wrapper (usa `-ExecutionPolicy Bypass`) oppure `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
 | `Impossibile leggere o parsare il file di configurazione` | JSON malformato | Validare con `Get-Content projects.json \| ConvertFrom-Json` |
 | `key duplicata` | Due progetti con stesso `key` | Renaming progetto |
+| `Python launcher 'py' not found.` (Install-Aider) | Python Launcher Windows non installato | Reinstallare Python da python.org assicurandosi che "Install launcher for all users" sia selezionato |
+| `Python <version> not found.` (Install-Aider) | Versione Python richiesta non installata | Installare la versione richiesta oppure usare `-PythonVersion <altra>` |
+| `Failed to upgrade pip tooling.` (Install-Aider) | Problemi rete, proxy aziendale, certificati corporate non riconosciuti da pip | Configurare `pip.ini` con `index-url` aziendale e certificato CA |
+| `Failed to install aider-chat.` (Install-Aider) | Stessa diagnosi di sopra; oppure dipendenza nativa che fallisce build | Verificare log pip; su Windows 10 vecchi può servire C++ Build Tools per alcune dipendenze |
+| `Aider executable not found after installation` (Install-Aider) | Virtualenv corrotto o creazione fallita silenziosamente | Rilanciare con `-ForceRecreate` |
+| `Aider verification failed.` (Install-Aider) | Aider installato ma `--version` fallisce | Investigare log; spesso correlato a versione Python non supportata da Aider (vedi release notes Aider) |
 
 ### 26.2 Esempi di sessione di troubleshooting
 
@@ -2717,8 +2944,16 @@ C:\Users\<utente>\
 │       └── runtime\                            ← File effimeri
 │           ├── continue.env
 │           └── aider.env
-└── .continue\
-    └── config.json                             ← Config Continue (gestita da plugin)
+├── .continue\
+│   └── config.json                             ← Config Continue (gestita da plugin)
+└── .venvs\
+    └── aider-env\                              ← Virtualenv Python isolato per Aider
+        ├── Lib\
+        ├── Scripts\
+        │   ├── aider.exe                       ← Eseguibile Aider
+        │   ├── pip.exe
+        │   └── python.exe                      ← Python del venv
+        └── pyvenv.cfg
 
 C:\dev\
 ├── gargiolastech-ai-tooling\                   ← Repo del launcher
@@ -2975,14 +3210,15 @@ Per un nuovo developer:
   - Client ID
   - Client Secret
   - Lista progetti (Project ID, nomi)
-- [ ] **Step 4** — Developer installa prerequisiti: IDE preferito (Rider e/o Visual Studio 2022), Infisical CLI, Git, Continue plugin per l'IDE selezionato.
+- [ ] **Step 4** — Developer installa prerequisiti: IDE preferito (Rider e/o Visual Studio 2022), Infisical CLI, Git, Python 3.12 (con Python Launcher), Continue plugin per l'IDE selezionato.
 - [ ] **Step 5** — Developer clona il repo `gargiolastech-ai-tooling`.
 - [ ] **Step 6** — Developer esegue `bootstrap-ai-tooling.cmd` e inserisce le credenziali.
-- [ ] **Step 7** — Developer esegue `Start-AiIde.cmd` (primo avvio crea config).
-- [ ] **Step 8** — Developer edita `projects.json` con i propri progetti.
-- [ ] **Step 9** — Developer esegue di nuovo `Start-AiIde.cmd` e verifica che l'IDE selezionato per il progetto si apra con Continue funzionante.
-- [ ] **Step 10** — Developer esegue `Install-AiIdeDesktopShortcut.ps1` per shortcut sul desktop.
-- [ ] **Step 11** — Developer firma documento di acknowledgment delle security best practices.
+- [ ] **Step 7** — Developer esegue `Install-Aider.cmd` per provisioning del virtualenv Aider.
+- [ ] **Step 8** — Developer esegue `Start-AiIde.cmd` (primo avvio crea config).
+- [ ] **Step 9** — Developer edita `projects.json` con i propri progetti.
+- [ ] **Step 10** — Developer esegue di nuovo `Start-AiIde.cmd` e verifica che l'IDE selezionato per il progetto si apra con Continue funzionante.
+- [ ] **Step 11** — Developer esegue `Install-AiIdeDesktopShortcut.ps1` per shortcut sul desktop.
+- [ ] **Step 12** — Developer firma documento di acknowledgment delle security best practices.
 
 ### 33.2 Comando "all-in-one" per onboarding
 
@@ -3003,16 +3239,19 @@ if (-not (Test-Path $repoDir)) {
     git clone https://github.com/gargiolastech/gargiolastech-ai-tooling.git $repoDir
 }
 
-# 2. Bootstrap WCM
+# 2. Bootstrap WCM (credenziali Machine Identity)
 & "$scriptDir\Set-InfisicalCredential.ps1" `
     -CredentialScope "gargiolastech-ai-tooling-dev" `
     -ClientId $ClientId `
     -ClientSecret $ClientSecret
 
-# 3. Trigger primo avvio (genera projects.json)
+# 3. Provisioning Aider (virtualenv isolato)
+& "$scriptDir\Install-Aider.ps1"
+
+# 4. Trigger primo avvio (genera projects.json)
 & "$scriptDir\Start-AiIde.ps1"
 
-# 4. Installa shortcut
+# 5. Installa shortcut
 & "$scriptDir\Install-AiIdeDesktopShortcut.ps1"
 
 Write-Host "Onboarding completato. Personalizza projects.json e riavvia il launcher."
@@ -3189,6 +3428,27 @@ E nei progetti che vogliono usarlo: `"ide": "neovim"`. **Caveat**: il launcher i
 
 L'unica cosa da verificare è che ogni IDE supporti il plugin Continue (o un equivalente) per consumare i segreti via `CONTINUE_ENV_FILE`. Aider funziona da terminale integrato in qualsiasi IDE.
 
+### Q18: Perché Aider viene installato in un virtualenv invece che globalmente?
+
+**A**: Per quattro motivi:
+
+1. **Isolamento dipendenze**: Aider trascina ~80 pacchetti Python. Installandolo globalmente, questi entrano in collisione potenziale con altri tool Python sulla stessa macchina.
+2. **Reversibilità**: disinstallare Aider richiederebbe `pip uninstall` di tutte le sue dipendenze (impossibile da fare in modo pulito). Cancellare la cartella `~/.venvs/aider-env` è atomico.
+3. **Upgrade sicuri**: `pip install --upgrade aider-chat` nel global site-packages può fare downgrade transitivo di pacchetti usati da altri tool. Nel venv è confinato.
+4. **Riproducibilità multi-workstation**: tutti i developer hanno un Aider venv "uguale", indipendentemente da cosa sia installato globalmente.
+
+Vedi Sezione 20.6 per il razionale architetturale completo.
+
+### Q19: Posso usare Aider installato globalmente invece del venv creato da Install-Aider?
+
+**A**: Tecnicamente sì, ma non è il pattern supportato. Il launcher non chiama mai `aider` direttamente: genera solo `aider.env` e setta `$env:AIDER_ENV_FILE`. Spetta all'utente lanciare Aider con `--env-file %AIDER_ENV_FILE%`. Quale binario `aider` viene usato è una scelta dell'utente nel suo `$PROFILE` o nelle invocazioni dirette.
+
+Detto questo, **la documentazione ufficiale e gli alias suggeriti (Sezione 20.8) assumono l'eseguibile in `~/.venvs/aider-env/Scripts/aider.exe`**. Deviare da questo pattern significa rinunciare ai vantaggi di isolamento descritti in Q18.
+
+### Q20: Cosa succede se ho già Aider installato globalmente prima di eseguire Install-Aider?
+
+**A**: Nulla. Il venv è completamente isolato: il `python.exe` del venv usa il suo proprio site-packages e ignora del tutto il global site-packages. Le due installazioni coesistono senza conflitti. È sicuro disinstallare la versione globale (`pip uninstall aider-chat` nel Python di sistema) dopo aver verificato che il venv funziona.
+
 ---
 
 ## Conclusione
@@ -3200,14 +3460,18 @@ Questa documentazione descrive un'architettura **runtime-first, zero-trust, IDE-
 3. **Ogni avvio è una fresh injection**: ciò che vale è quanto è in Infisical *in questo momento*, non quanto era ieri.
 4. **L'IDE è un dettaglio di configurazione, non di codice**: l'engine non conosce Rider o Visual Studio, riceve un path eseguibile e una solution. Aggiungere un nuovo IDE è una modifica dichiarativa al JSON.
 
+A questi si aggiunge un quinto principio operativo introdotto in v2.1:
+
+5. **Le dipendenze runtime sono isolate**: Aider vive in un virtualenv dedicato per non contaminare l'ambiente Python di sistema, ed è installabile/aggiornabile/disinstallabile in modo atomico.
+
 La soluzione è **deliberatamente semplice**: poche centinaia di righe di PowerShell + un singolo file JSON. La semplicità è una feature di sicurezza: il codice è ispezionabile in un'oretta, non ci sono dipendenze opache, ogni decisione è giustificabile in termini di trade-off espliciti.
 
-L'estendibilità è **per design**: cross-platform, multi-IDE (già abilitato in v2.0), multi-tenant, gateway-based architecture sono tutti percorsi naturali partendo dalla base attuale.
+L'estendibilità è **per design**: cross-platform, multi-IDE (già abilitato in v2.0), provisioning automatizzato (in v2.1), multi-tenant, gateway-based architecture sono tutti percorsi naturali partendo dalla base attuale.
 
-> *"Repository inerte. Segreti effimeri. Runtime autoritativo. Identità tecnica disaccoppiata. IDE intercambiabile."*
+> *"Repository inerte. Segreti effimeri. Runtime autoritativo. Identità tecnica disaccoppiata. IDE intercambiabile. Dipendenze isolate."*
 
 ---
 
-**Versione documento:** 2.0 — multi-IDE support
-**Ultima revisione:** 22 maggio 2026
+**Versione documento:** 2.1 — Aider installer integrato
+**Ultima revisione:** 23 maggio 2026
 **Manutentori:** Platform Engineering Team — GargiolasTech
