@@ -1,0 +1,76 @@
+name: GargiolasTech AI Workspace
+version: 1.0.0
+schema: v1
+
+models:
+  #
+  # MAIN BACKEND IMPLEMENTATION MODEL
+  #
+  - name: Backend Coder
+    provider: openai
+    model: backend-coder
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      - edit
+      - apply
+      - autocomplete
+
+  #
+  # FAST ITERATION / SMALL TASKS
+  #
+  - name: Fast Coder
+    provider: openai
+    model: fast-coder
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      - summarize
+
+  #
+  # DDD / CQRS / ARCHITECTURE
+  #
+  - name: Architect
+    provider: openai
+    model: architect
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      
+  - name: Principal Architect
+    provider: openai
+    model: principal-architect
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+
+  #
+  # WEB SEARCH / DOCS / BEST PRACTICES
+  #
+  - name: Web Research
+    provider: openai
+    model: web-research
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+
+  #
+  # DEEP INVESTIGATION
+  #
+  - name: Deep Research
+    provider: openai
+    model: deep-research
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    
+defaultModel: Architect
+
+context:
+  - provider: code
+  - provider: diff
+  - provider: terminal
+  - provider: problems
+  - provider: docs

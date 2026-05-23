@@ -115,6 +115,10 @@ function Validate-LauncherConfig {
         throw "Configurazione non valida: projects deve contenere almeno un progetto."
     }
 
+    if ([string]::IsNullOrWhiteSpace($Config.infisicalProjectId) -or $Config.infisicalProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
+    throw "Configurazione non valida: infisicalProjectId root non valorizzato."
+    }
+
     foreach ($project in $Config.projects) {
         if ([string]::IsNullOrWhiteSpace($project.key)) {
             throw "Configurazione non valida: ogni progetto deve avere key."
@@ -126,10 +130,6 @@ function Validate-LauncherConfig {
 
         if ([string]::IsNullOrWhiteSpace($project.solutionPath)) {
             throw "Configurazione non valida: il progetto '$($project.key)' non ha solutionPath."
-        }
-
-        if ([string]::IsNullOrWhiteSpace($project.infisicalProjectId) -or $project.infisicalProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
-            throw "Configurazione non valida: il progetto '$($project.key)' non ha infisicalProjectId valorizzato."
         }
 
         if (-not (Test-Path $project.solutionPath)) {
@@ -243,7 +243,7 @@ Write-Host ""
     -ExecutionPolicy Bypass `
     -NoProfile `
     -File $enginePath `
-    -ProjectId $selected.infisicalProjectId `
+    -ProjectId $config.infisicalProjectId `
     -Environment $config.environment `
     -CredentialScope $config.credentialScope `
     -InfisicalHost $config.infisicalHost `

@@ -65,7 +65,7 @@ echo Bootstrap completed successfully.
 echo.
 echo You can now start Rider with:
 echo.
-echo   .\Start-Rider-With-AiSecrets.ps1 -ProjectId "^<INFISICAL_PROJECT_ID^>" -CredentialScope "%CREDENTIAL_SCOPE%" -SolutionPath "C:\dev\your-repo"
+echo   .\Start-Ide-With-AiSecrets.ps1 -ProjectId "^<INFISICAL_PROJECT_ID^>" -CredentialScope "%CREDENTIAL_SCOPE%" -SolutionPath "C:\dev\your-repo"
 echo.
 
 pause
