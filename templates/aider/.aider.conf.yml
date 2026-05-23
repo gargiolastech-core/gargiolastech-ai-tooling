@@ -1,0 +1,51 @@
+model: openai/backend-coder
+
+openai-api-base: ${LLM_API_URL}
+openai-api-key: ${LLM_API_KEY}
+
+#
+# SECONDARY MODELS
+#
+
+weak-model: openai/fast-coder
+editor-model: openai/fast-coder
+
+#
+# OPTIONAL SPECIALIZED MODELS
+#
+
+architect-model: openai/architect
+research-model: openai/deep-research
+
+#
+# UI / UX
+#
+
+dark-mode: true
+pretty: true
+stream: true
+
+#
+# GIT BEHAVIOR
+#
+
+auto-commits: false
+dirty-commits: false
+gitignore: true
+show-diffs: true
+subtree-only: true
+
+#
+# TOKEN / PERFORMANCE
+#
+
+map-tokens: 4096
+cache-prompts: true
+check-update: false
+
+#
+# INTERACTION
+#
+
+yes-always: false
+vim: false

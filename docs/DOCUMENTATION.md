@@ -1,9 +1,21 @@
 # GargiolasTech AI Tooling — Documentazione Tecnica Enterprise
 
 > **Repository:** `gargiolastech-ai-tooling`
-> **Versione documento:** 1.0
+> **Versione documento:** 2.1 — Aider installer integrato
 > **Audience:** Backend Developers · DevOps Engineers · Platform Engineers · Security Engineers
 > **Classificazione:** Documentazione architetturale e operativa di riferimento
+
+> ### Cosa è cambiato rispetto alla v2.0
+> - Aggiunti gli script `Install-Aider.cmd` e `Install-Aider.ps1` per il **provisioning automatizzato di Aider** in un virtualenv Python isolato (`~/.venvs/aider-env`).
+> - L'installazione di Aider entra ora ufficialmente nel flusso di setup standard: non è più un passo manuale demandato al developer.
+> - Documentate le decisioni di design: virtualenv isolato, Python launcher (`py -<version>`), idempotenza con `-ForceRecreate`.
+
+> ### Cosa è cambiato rispetto alla v1.0
+> - Il launcher è ora **IDE-agnostic**: supporta JetBrains Rider, Visual Studio 2022 e qualsiasi altro IDE configurabile dichiarativamente.
+> - Gli script sono stati rinominati da `*-AiRider*` a `*-AiIde*`. L'engine `Start-Rider-With-AiSecrets.ps1` è ora `Start-Ide-With-AiSecrets.ps1`.
+> - Il file `projects.json` introduce la sezione `ides` (dizionario IDE-id → path eseguibile) e il campo `ide` per ogni progetto.
+> - Il collegamento desktop usa un'icona dedicata (`images/Icona.ico`) versionata in repo, anziché ereditarla dall'eseguibile dell'IDE.
+> - Nuova cartella `images/` contenente l'asset dell'icona del launcher.
 
 ---
 
@@ -29,7 +41,7 @@
 18. [projects.json — spiegazione completa](#18-projectsjson--spiegazione-completa)
 19. [Integrazione Continue](#19-integrazione-continue)
 20. [Integrazione Aider](#20-integrazione-aider)
-21. [Integrazione Rider](#21-integrazione-rider)
+21. [Integrazione IDE (Rider, Visual Studio, …)](#21-integrazione-ide-rider-visual-studio-)
 22. [Runtime secret generation flow](#22-runtime-secret-generation-flow)
 23. [Security best practices](#23-security-best-practices)
 24. [Strategia .gitignore](#24-strategia-gitignore)
@@ -48,7 +60,7 @@
 
 ## 1. Executive Summary
 
-`gargiolastech-ai-tooling` è una piattaforma DevEx (Developer Experience) progettata per **centralizzare e mettere in sicurezza l'accesso degli sviluppatori ai servizi AI** (OpenAI, Anthropic, Mistral, modelli locali via LiteLLM, ecc.) utilizzati nei flussi di lavoro quotidiani con **JetBrains Rider**, **Continue.dev** (estensione AI per IDE) e **Aider** (pair-programming AI da terminale).
+`gargiolastech-ai-tooling` è una piattaforma DevEx (Developer Experience) progettata per **centralizzare e mettere in sicurezza l'accesso degli sviluppatori ai servizi AI** (OpenAI, Anthropic, Mistral, modelli locali via LiteLLM, ecc.) utilizzati nei flussi di lavoro quotidiani con IDE multipli — **JetBrains Rider**, **Visual Studio 2022**, e qualsiasi altro IDE configurabile — insieme a **Continue.dev** (estensione AI per IDE) e **Aider** (pair-programming AI da terminale).
 
 Il problema architetturale che questo repository risolve è il seguente: in un team enterprise di sviluppo .NET, ogni developer ha normalmente bisogno di chiavi API verso fornitori AI commerciali. La pratica diffusa, ma intrinsecamente fragile, è quella di:
 
@@ -66,10 +78,10 @@ Le tecnologie chiave sono:
 | **Infisical** | Secret store centrale (cloud o self-hosted). Single source of truth per i segreti AI. |
 | **Machine Identity (Universal Auth)** | Modello di autenticazione M2M verso Infisical, basato su Client ID + Client Secret a lunga durata, scambiabili con token a breve durata. |
 | **Windows Credential Manager (WCM)** | Storage cifrato a livello OS per le sole **credenziali di bootstrap** (Client ID + Client Secret della Machine Identity). |
-| **PowerShell Launcher** | Orchestratore che legge WCM, autentica verso Infisical, esporta i segreti AI in file `.env` runtime e avvia Rider con le variabili d'ambiente corrette. |
+| **PowerShell Launcher** | Orchestratore IDE-agnostic che legge WCM, autentica verso Infisical, esporta i segreti AI in file `.env` runtime e avvia l'IDE selezionato per il progetto (Rider, Visual Studio, …) con le variabili d'ambiente corrette. |
 | **Repository GitHub** | Source of truth **esclusivamente** per template, prompt, configurazioni non sensibili e script di automazione. |
 
-L'architettura è progettata per essere **estensibile a N progetti** tramite un file di configurazione (`projects.json`) che mappa identità Infisical, percorsi delle solution e parametri di ambiente. Un singolo launcher unificato gestisce qualsiasi numero di progetti senza duplicazione di script.
+L'architettura è progettata per essere **estensibile a N progetti e N IDE** tramite un file di configurazione (`projects.json`) che mappa identità Infisical, percorsi delle solution, IDE associato a ciascun progetto e parametri di ambiente. Un singolo launcher unificato gestisce qualsiasi numero di progetti e IDE senza duplicazione di script: aggiungere il supporto a un nuovo IDE è una modifica **dichiarativa** di configurazione, non un cambio di codice.
 
 > **Filosofia di design:** *"Il repository è inerte. I segreti sono effimeri. Il runtime è autoritativo."*
 
@@ -82,7 +94,7 @@ L'architettura è progettata per essere **estensibile a N progetti** tramite un 
 Il repository fornisce **un set di artefatti versionati e idempotenti** per:
 
 1. **Bootstrappare** una workstation di sviluppo Windows con le credenziali minime necessarie all'autenticazione verso Infisical (operazione `one-shot` per developer/macchina).
-2. **Avviare quotidianamente** JetBrains Rider in un contesto in cui Continue.dev e Aider abbiano accesso ai segreti AI senza intervento manuale, senza file di configurazione locali a lungo termine e senza esporre i segreti al filesystem persistente.
+2. **Avviare quotidianamente** l'IDE associato al progetto selezionato (JetBrains Rider, Visual Studio 2022 o altro IDE configurato) in un contesto in cui Continue.dev e Aider abbiano accesso ai segreti AI senza intervento manuale, senza file di configurazione locali a lungo termine e senza esporre i segreti al filesystem persistente.
 3. **Distribuire in modo consistente** le configurazioni non sensibili (prompt, template, regole di Continue, configurazione modelli LiteLLM, system prompt di Aider) attraverso Git.
 4. **Standardizzare l'onboarding** di nuovi developer riducendo il time-to-productivity da ore (setup manuale di chiavi AI, configurazione di ciascun tool) a minuti (esecuzione di due script).
 
@@ -102,7 +114,7 @@ flowchart TB
     subgraph TopLayer["Layer DevEx Workstation"]
         AT["gargiolastech-ai-tooling"]
         Cred["WCM"]
-        IDE["Rider + Continue + Aider"]
+        IDE["IDE (Rider / VS2022 / …) + Continue + Aider"]
     end
 
     subgraph MiddleLayer["Layer Secret Management"]
@@ -179,7 +191,7 @@ flowchart TB
     end
 
     subgraph CONSUMERS["Consumer"]
-        RIDER["Rider"]
+        IDE["IDE selezionato<br/>(Rider / VS2022 / …)"]
         CONT["Continue.dev"]
         AIDER["Aider"]
     end
@@ -201,9 +213,10 @@ flowchart TB
     AIDER_PATH -->|"export dotenv"| AIDER_ENV
     CONT_ENV --> RUN_DIR
     AIDER_ENV --> RUN_DIR
-    SCRIPTS -->|"avvio"| RIDER
-    RIDER -.->|"CONTINUE_ENV_FILE"| CONT
-    RIDER -.->|"AIDER_ENV_FILE"| AIDER
+    CFG -->|"ide → path"| SCRIPTS
+    SCRIPTS -->|"avvio IDE selezionato"| IDE
+    IDE -.->|"CONTINUE_ENV_FILE"| CONT
+    IDE -.->|"AIDER_ENV_FILE"| AIDER
 
     style L1 fill:#1b5e20,stroke:#fff,color:#fff
     style L2 fill:#827717,stroke:#fff,color:#fff
@@ -236,28 +249,29 @@ sequenceDiagram
     autonumber
     actor Dev as Developer
     participant Desktop as Shortcut Desktop
-    participant CMD as Start-AiRider.cmd
-    participant PS1 as Start-AiRider.ps1
+    participant CMD as Start-AiIde.cmd
+    participant PS1 as Start-AiIde.ps1
     participant CFG as projects.json
-    participant Engine as Start-Rider-With-AiSecrets.ps1
+    participant Engine as Start-Ide-With-AiSecrets.ps1
     participant WCM as Windows Credential Manager
     participant CLI as Infisical CLI
     participant INF as Infisical Server
     participant FS as Runtime FS
-    participant Rider as JetBrains Rider
+    participant IDE as IDE selezionato
 
-    Dev->>Desktop: Double click "Rider AI"
-    Desktop->>CMD: Esegue Start-AiRider.cmd
-    CMD->>PS1: powershell -File Start-AiRider.ps1
+    Dev->>Desktop: Double click "AI IDE Launcher"
+    Desktop->>CMD: Esegue Start-AiIde.cmd
+    CMD->>PS1: powershell -File Start-AiIde.ps1
     PS1->>CFG: Read-LauncherConfig
     alt Config non esiste
         PS1->>FS: Copia template da repo
         PS1-->>Dev: Notifica: edita config e riavvia
     end
-    PS1->>PS1: Validate-LauncherConfig
+    PS1->>PS1: Validate-LauncherConfig (incluso ides)
     PS1->>Dev: Show-Projects (lista numerata)
     Dev->>PS1: Seleziona indice progetto
-    PS1->>Engine: Invoca Start-Rider-With-AiSecrets.ps1
+    PS1->>PS1: Risolvi ide del progetto<br/>via config.ides[selected.ide]
+    PS1->>Engine: Invoca Start-Ide-With-AiSecrets.ps1<br/>con -IdeType e -IdePath
     Engine->>WCM: CredRead(scope-client-id)
     WCM-->>Engine: ClientId
     Engine->>WCM: CredRead(scope-client-secret)
@@ -283,8 +297,8 @@ sequenceDiagram
     Engine->>Engine: Set $env:CONTINUE_ENV_FILE
     Engine->>Engine: Set $env:AIDER_ENV_FILE
     Engine->>FS: Get-ChildItem *.sln in SolutionPath
-    Engine->>Rider: Start-Process con sln/path
-    Rider-->>Dev: IDE pronto con AI tools configurati
+    Engine->>IDE: Start-Process IdePath con sln/path
+    IDE-->>Dev: IDE pronto con AI tools configurati
 ```
 
 ### 4.2 Stadi del flusso runtime
@@ -294,13 +308,14 @@ sequenceDiagram
 | 1 | Avvio shortcut | Click utente | <100ms | Nessuno significativo |
 | 2 | Bootstrap PowerShell | Esecuzione `.cmd` | 200-500ms | ExecutionPolicy errata |
 | 3 | Lettura configurazione | I/O filesystem | <50ms | JSON malformato, file mancante |
-| 4 | Validazione configurazione | In-memory | <10ms | Campo obbligatorio mancante |
+| 4 | Validazione configurazione (incluso `ides`) | In-memory | <10ms | Campo obbligatorio mancante, `ides` non definito |
 | 5 | Selezione progetto | Input utente | Variabile | Indice non valido |
-| 6 | Lettura WCM | P/Invoke `Advapi32.dll` | <50ms | Credenziale assente |
-| 7 | Login Infisical | HTTP POST | 200-800ms | ClientId/Secret invalidi, rete |
-| 8 | Export segreti (4 chiamate) | HTTP GET × 4 | 400-1500ms | Path non esistente, scope mancante |
-| 9 | Setup env runtime | Filesystem write | <50ms | Permessi negati |
-| 10 | Lancio Rider | Process spawn | 50-200ms | Eseguibile non trovato |
+| 6 | Risoluzione IDE del progetto | Lookup in `config.ides[selected.ide]` | <10ms | `ide` non valorizzato, IDE non configurato, path non esistente |
+| 7 | Lettura WCM | P/Invoke `Advapi32.dll` | <50ms | Credenziale assente |
+| 8 | Login Infisical | HTTP POST | 200-800ms | ClientId/Secret invalidi, rete |
+| 9 | Export segreti (4 chiamate) | HTTP GET × 4 | 400-1500ms | Path non esistente, scope mancante |
+| 10 | Setup env runtime | Filesystem write | <50ms | Permessi negati |
+| 11 | Lancio IDE | Process spawn | 50-200ms | Eseguibile non trovato |
 
 **Tempo totale tipico end-to-end:** 1.5 – 3.5 secondi.
 
@@ -588,7 +603,7 @@ Conseguenze pratiche:
 
 ### 8.4 Esempio di interazione P/Invoke
 
-Lo script `Start-Rider-With-AiSecrets.ps1` usa **direttamente le Win32 API** via P/Invoke `Add-Type`, **senza dipendenze da moduli PowerShell esterni**:
+Lo script `Start-Ide-With-AiSecrets.ps1` usa **direttamente le Win32 API** via P/Invoke `Add-Type`, **senza dipendenze da moduli PowerShell esterni**:
 
 ```csharp
 [DllImport("Advapi32.dll", EntryPoint = "CredReadW", CharSet = CharSet.Unicode, SetLastError = true)]
@@ -672,7 +687,7 @@ La regola operativa è: **WCM contiene solo le credenziali di accesso a Infisica
 ```mermaid
 stateDiagram-v2
     [*] --> Inesistente
-    Inesistente --> Generato : Start-Rider-With-AiSecrets.ps1
+    Inesistente --> Generato : Start-Ide-With-AiSecrets.ps1
     Generato --> Consumato : Rider apre Continue/Aider
     Consumato --> Stale : Sessione termina
     Stale --> Generato : Prossimo avvio (sovrascrittura)
@@ -726,21 +741,24 @@ Questo è un trade-off **deliberato**: il valore di sicurezza di non avere file 
 ```
 gargiolastech-ai-tooling/
 ├── LICENSE                          ← MIT License
-├── README.md                        ← Repo-level overview (minimal)
-├── aider/                           ← Configurazioni Aider versionate (vuota nel repo base)
-├── continue/                        ← Configurazioni Continue versionate (vuota nel repo base)
-├── docs/                            ← Documentazione aggiuntiva (vuota nel repo base)
-├── prompts/                         ← Prompt templates condivisi (vuota nel repo base)
+├── README.md                        ← Repo-level overview con link a docs/
+├── docs/
+│   └── DOCUMENTATION.md             ← Questa documentazione enterprise
+├── images/
+│   ├── Icona.ico                    ← Icona del launcher (formato Windows shortcut)
+│   └── Icona.png                    ← Versione PNG per documentazione/web
 ├── scripts/
 │   └── windows/                     ← Tutti gli script PowerShell e CMD
 │       ├── bootstrap-ai-tooling.cmd
-│       ├── Install-AiRiderDesktopShortcut.ps1
+│       ├── Install-AiIdeDesktopShortcut.ps1
+│       ├── Install-Aider.cmd
+│       ├── Install-Aider.ps1
 │       ├── Set-InfisicalCredential.ps1
-│       ├── Start-AiRider.cmd
-│       ├── Start-AiRider.ps1
-│       └── Start-Rider-With-AiSecrets.ps1
+│       ├── Start-AiIde.cmd
+│       ├── Start-AiIde.ps1
+│       └── Start-Ide-With-AiSecrets.ps1
 └── templates/
-    └── projects.json.template       ← Template configurazione multi-progetto
+    └── projects.json.template       ← Template configurazione multi-progetto / multi-IDE
 ```
 
 ### 10.2 Tabella esplicativa file-per-file
@@ -748,41 +766,45 @@ gargiolastech-ai-tooling/
 | Percorso | Tipo | Responsabilità | Idempotente | Sensibile |
 |---|---|---|:---:|:---:|
 | `LICENSE` | Documento | Termini di licenza (MIT) | — | ❌ |
-| `README.md` | Documento | Punto d'ingresso documentale | — | ❌ |
+| `README.md` | Documento | Punto d'ingresso documentale + link a `docs/` | — | ❌ |
+| `docs/DOCUMENTATION.md` | Documento | Documentazione tecnica enterprise completa | — | ❌ |
+| `images/Icona.ico` | Asset binario | Icona del collegamento desktop (formato `.ico` richiesto da Windows) | — | ❌ |
+| `images/Icona.png` | Asset binario | Versione PNG dell'icona per uso non-shortcut (es. documentazione, web) | — | ❌ |
 | `scripts/windows/bootstrap-ai-tooling.cmd` | Wrapper CMD | UX-friendly wrapper su `Set-InfisicalCredential.ps1` con scope predefinito | ✅ | ❌ (interattivo) |
 | `scripts/windows/Set-InfisicalCredential.ps1` | Script core | Scrive Client ID + Client Secret in WCM tramite `cmdkey` | ✅ | ❌ (riceve secret come param) |
-| `scripts/windows/Start-AiRider.cmd` | Wrapper CMD | Lancia `Start-AiRider.ps1` bypassando ExecutionPolicy | ✅ | ❌ |
-| `scripts/windows/Start-AiRider.ps1` | Launcher | Multi-project chooser, valida config, delega a `Start-Rider-With-AiSecrets.ps1` | ✅ | ❌ |
-| `scripts/windows/Start-Rider-With-AiSecrets.ps1` | Engine | Cuore del runtime: WCM → Infisical login → export → spawn Rider | ✅ | ⚠️ (manipola segreti in-memory) |
-| `scripts/windows/Install-AiRiderDesktopShortcut.ps1` | Utility | Crea collegamento desktop "Rider AI" | ✅ | ❌ |
-| `templates/projects.json.template` | Template | Schema di configurazione multi-progetto | — | ❌ |
-| `aider/`, `continue/`, `docs/`, `prompts/` | Cartelle | Punti di estensione per asset condivisi | — | ❌ |
+| `scripts/windows/Install-Aider.cmd` | Wrapper CMD | Wrapper double-clickable per `Install-Aider.ps1`, propaga argomenti con `%*` | ✅ | ❌ |
+| `scripts/windows/Install-Aider.ps1` | Provisioner | Installa Aider in un virtualenv Python isolato (`~/.venvs/aider-env`); supporta `-PythonVersion`, `-VenvPath`, `-ForceRecreate` | ✅ | ❌ |
+| `scripts/windows/Start-AiIde.cmd` | Wrapper CMD | Lancia `Start-AiIde.ps1` bypassando ExecutionPolicy | ✅ | ❌ |
+| `scripts/windows/Start-AiIde.ps1` | Launcher | Multi-project / multi-IDE chooser, valida config, risolve IDE, delega a `Start-Ide-With-AiSecrets.ps1` | ✅ | ❌ |
+| `scripts/windows/Start-Ide-With-AiSecrets.ps1` | Engine | Cuore del runtime IDE-agnostic: WCM → Infisical login → export → spawn IDE | ✅ | ⚠️ (manipola segreti in-memory) |
+| `scripts/windows/Install-AiIdeDesktopShortcut.ps1` | Utility | Crea collegamento desktop "AI IDE Launcher" con icona da `images/Icona.ico` | ✅ | ❌ |
+| `templates/projects.json.template` | Template | Schema di configurazione multi-progetto e multi-IDE | — | ❌ |
 
 ### 10.3 Convenzioni di naming adottate
 
 | Convenzione | Razionale |
 |---|---|
-| **Verb-Noun** PowerShell (`Set-InfisicalCredential`, `Start-AiRider`) | Aderenza alle linee guida Microsoft PowerShell, abilita auto-discovery |
+| **Verb-Noun** PowerShell (`Set-InfisicalCredential`, `Start-AiIde`) | Aderenza alle linee guida Microsoft PowerShell, abilita auto-discovery |
 | **Pascal Case** per `.ps1` | Standard PS community |
 | **lowercase-with-dashes** per `.cmd` | Convenzione Unix-like per wrapper |
-| **`-AiRider`** come suffisso | Branding consistente per identificare gli artefatti del progetto |
-| **`Start-Rider-With-AiSecrets`** | Nome esplicito sull'azione + perché differisce da `rider64.exe` diretto |
+| **`-AiIde`** come suffisso (precedentemente `-AiRider`) | Branding consistente IDE-agnostic, evita di legare il nome a un singolo IDE |
+| **`Start-Ide-With-AiSecrets`** | Nome esplicito sull'azione + sull'iniezione dei segreti |
 
 ### 10.4 Granularità degli script: perché 3 script invece di 1 monolitico
 
 ```mermaid
 flowchart TB
     subgraph LayerUX["Layer UX"]
-        CMD["Start-AiRider.cmd"]
-        SHORT["Install-AiRiderDesktopShortcut.ps1"]
+        CMD["Start-AiIde.cmd"]
+        SHORT["Install-AiIdeDesktopShortcut.ps1"]
     end
 
     subgraph LayerOrch["Layer Orchestration"]
-        LAUNCH["Start-AiRider.ps1"]
+        LAUNCH["Start-AiIde.ps1"]
     end
 
     subgraph LayerEngine["Layer Engine"]
-        ENG["Start-Rider-With-AiSecrets.ps1"]
+        ENG["Start-Ide-With-AiSecrets.ps1"]
     end
 
     subgraph LayerBootstrap["Layer Bootstrap (one-shot)"]
@@ -790,10 +812,16 @@ flowchart TB
         SETCRED["Set-InfisicalCredential.ps1"]
     end
 
+    subgraph LayerProvisioning["Layer Provisioning (one-shot)"]
+        AIDERCMD["Install-Aider.cmd"]
+        AIDERPS["Install-Aider.ps1"]
+    end
+
     CMD --> LAUNCH
     SHORT -.->|"installa collegamento a"| CMD
     LAUNCH --> ENG
     BOOT --> SETCRED
+    AIDERCMD --> AIDERPS
 ```
 
 **Responsabilità separate**:
@@ -801,12 +829,13 @@ flowchart TB
 - **UX Layer**: si occupa solo di doppio-click ed exit code utenti-friendly.
 - **Orchestration Layer**: legge config, valida, sceglie il progetto, chiama l'engine.
 - **Engine Layer**: parlare con WCM, Infisical, filesystem runtime e lanciare Rider.
-- **Bootstrap Layer**: scritto una sola volta nella vita di una workstation; isolato per chiarezza operativa.
+- **Bootstrap Layer**: scritto una sola volta nella vita di una workstation; isolato per chiarezza operativa. Memorizza le credenziali Machine Identity in WCM.
+- **Provisioning Layer**: prepara le dipendenze runtime (Aider in virtualenv Python). Eseguito una volta per workstation; rieseguibile per upgrade.
 
 Vantaggi:
 
 1. **Testabilità**: l'engine può essere invocato direttamente da CI o test manuali, bypassando la UX.
-2. **Riutilizzabilità**: il layer engine accetta parametri espliciti e può essere chiamato anche da altri orchestratori (futuro: VS Code launcher, JetBrains Toolbox plugin).
+2. **Riutilizzabilità**: il layer engine accetta parametri espliciti (`-IdeType`, `-IdePath`) ed è **IDE-agnostic** by design — può essere chiamato anche da altri orchestratori (futuro: VS Code launcher, JetBrains Toolbox plugin) semplicemente passando il path dell'eseguibile target.
 3. **Single Responsibility**: ogni script ha un solo motivo per cambiare.
 4. **Failure isolation**: un errore nel layer UX (es. encoding CMD) non confonde il debug del layer engine.
 
@@ -823,10 +852,13 @@ Vantaggi:
 | Windows PowerShell | 5.1+ | `$PSVersionTable.PSVersion` |
 | Git for Windows | 2.30+ | `git --version` |
 | Infisical CLI | 0.20.0+ | `infisical --version` |
+| Python Launcher (`py`) + Python 3.12 | Vedi nota | `py -3.12 --version` |
 | JetBrains Rider | 2024.1+ | Apertura dal menu Start |
 | Account Infisical | — | Login web UI |
 | Continue.dev plugin | Da JetBrains Marketplace | Installazione in Rider |
-| Aider | Python 3.10+ via `pip install aider-chat` (opzionale) | `aider --version` |
+| Aider | Installato via `Install-Aider.cmd` (Sezione 11.5) | `& "$HOME\.venvs\aider-env\Scripts\aider.exe" --version` |
+
+> **Nota Python**: il Python Launcher (`py.exe`) viene installato di default dall'installer ufficiale di Python su Windows (python.org). Lo script `Install-Aider.ps1` lo richiede per supportare workstation con più versioni di Python installate contemporaneamente. La versione esatta richiesta è parametrizzabile tramite `-PythonVersion` (default `3.12`).
 
 ### 11.2 Installazione Infisical CLI
 
@@ -868,15 +900,73 @@ Vedi le sezioni dedicate:
 - **Sezione 12** — creazione del progetto Infisical (web UI).
 - **Sezione 13** — creazione e configurazione della Machine Identity.
 - **Sezione 14** — bootstrap delle credenziali tramite `bootstrap-ai-tooling.cmd`.
-- **Sezione 11.5** — primo avvio del launcher e configurazione `projects.json`.
+- **Sezione 11.5** — installazione di Aider via `Install-Aider.cmd`.
+- **Sezione 11.6** — primo avvio del launcher e configurazione `projects.json`.
+- **Sezione 11.7** — installazione del collegamento desktop.
 
-### 11.5 Primo avvio del launcher
+### 11.5 Installazione di Aider
 
-Dopo aver completato il bootstrap (Sezione 14), il primo avvio del launcher crea automaticamente lo scheletro di `projects.json`:
+Aider è un componente runtime indipendente dall'IDE (Sezione 20). Viene installato in un **virtualenv Python isolato** per evitare contaminazione del Python di sistema.
 
 ```powershell
 cd C:\dev\gargiolastech-ai-tooling\scripts\windows
-.\Start-AiRider.cmd
+.\Install-Aider.cmd
+```
+
+**Output atteso (riassunto):**
+
+```
+===========================================
+ GargiolasTech Aider Installer
+===========================================
+
+[INFO] Script root: C:\dev\gargiolastech-ai-tooling\scripts\windows
+[INFO] Repository root: C:\dev\gargiolastech-ai-tooling
+
+[INFO] Checking Python 3.12...
+[OK] Python 3.12.x
+
+[INFO] Creating virtualenv: C:\Users\<utente>\.venvs\aider-env
+[INFO] Upgrading pip tooling...
+[INFO] Installing/upgrading aider-chat...
+[INFO] Verifying Aider installation...
+aider 0.x.y
+
+===========================================
+ Aider installed successfully
+===========================================
+```
+
+**Parametri opzionali**:
+
+| Parametro | Default | Significato |
+|---|---|---|
+| `-PythonVersion` | `3.12` | Versione Python richiesta (sintassi `py -<version>`). Cambiare se la workstation usa Python 3.11 o 3.13. |
+| `-VenvPath` | `$HOME\.venvs\aider-env` | Path del virtualenv. Personalizzare in caso di vincoli di storage. |
+| `-ForceRecreate` | (off) | Switch: ricrea da zero il virtualenv anche se già esistente. Utile dopo upgrade di Python major. |
+
+Esempi:
+
+```powershell
+# Versione Python diversa
+.\Install-Aider.ps1 -PythonVersion 3.11
+
+# Forza ricreazione del venv (es. dopo upgrade Python)
+.\Install-Aider.ps1 -ForceRecreate
+
+# Virtualenv in path custom
+.\Install-Aider.ps1 -VenvPath "D:\tools\aider-env"
+```
+
+> Dettagli implementativi e razionale architetturale dell'installer Aider: vedi Sezione 20.6.
+
+### 11.6 Primo avvio del launcher
+
+Dopo aver completato il bootstrap (Sezione 14) e l'installazione di Aider (Sezione 11.5), il primo avvio del launcher crea automaticamente lo scheletro di `projects.json`:
+
+```powershell
+cd C:\dev\gargiolastech-ai-tooling\scripts\windows
+.\Start-AiIde.cmd
 ```
 
 **Output atteso al primo avvio:**
@@ -899,22 +989,24 @@ Modifica:
 Poi riesegui il launcher.
 ```
 
+> **Nota**: il messaggio elenca `riderPath` come campo legacy. Nella versione corrente del template, il path dell'IDE è dichiarato nella sezione `ides` (vedi Sezione 18). Per modificare il path di Rider, intervenire su `ides.rider.path` in `projects.json`. Il messaggio dello script è solo testo informativo e non riflette il rename — il comportamento di validazione sottostante è basato sulla nuova struttura `ides`.
+
 Il file generato va personalizzato (Sezione 18). Dopo la modifica, il successivo lancio mostrerà la lista dei progetti disponibili.
 
-### 11.6 Installazione del collegamento desktop
+### 11.7 Installazione del collegamento desktop
 
 ```powershell
-.\Install-AiRiderDesktopShortcut.ps1
+.\Install-AiIdeDesktopShortcut.ps1
 ```
 
 Output:
 
 ```
 Collegamento creato:
-C:\Users\<utente>\Desktop\Rider AI.lnk
+C:\Users\<utente>\Desktop\AI IDE Launcher.lnk
 ```
 
-Da quel momento in poi, il workflow standard è: **doppio click sull'icona → seleziona progetto → Rider si apre con i segreti AI caricati**.
+Da quel momento in poi, il workflow standard è: **doppio click sull'icona → seleziona progetto → l'IDE configurato per quel progetto si apre con i segreti AI caricati**.
 
 ---
 
@@ -961,7 +1053,7 @@ flowchart TB
 
 ### 12.3 Struttura dei path Infisical
 
-L'engine `Start-Rider-With-AiSecrets.ps1` esporta secret da **path predefiniti**:
+L'engine `Start-Ide-With-AiSecrets.ps1` esporta secret da **path predefiniti**:
 
 ```
 /global       → Segreti comuni a tutti i tool (es. OPENAI_API_KEY se condiviso)
@@ -1232,14 +1324,15 @@ E poi re-bootstrap con i nuovi valori. (Vedi Sezione 28 per la procedura complet
 
 ## 15. Runtime launcher flow
 
-### 15.1 Dispatcher `Start-AiRider.ps1`
+### 15.1 Dispatcher `Start-AiIde.ps1`
 
-Lo script `Start-AiRider.ps1` è il **dispatcher** che gestisce la selezione multi-progetto. La sua responsabilità è:
+Lo script `Start-AiIde.ps1` è il **dispatcher** che gestisce la selezione multi-progetto e la **risoluzione dell'IDE associato**. La sua responsabilità è:
 
-1. Caricare e validare `projects.json`.
+1. Caricare e validare `projects.json` (incluso il dizionario `ides`).
 2. Presentare all'utente la lista dei progetti (oppure restituirla con `-List`).
 3. Accettare l'input dell'utente (interattivo o via parametro `-ProjectKey`).
-4. Delegare l'esecuzione effettiva a `Start-Rider-With-AiSecrets.ps1` passando i parametri corretti.
+4. **Risolvere l'IDE** del progetto selezionato: prendere il campo `selected.ide` (es. `"rider"`, `"visualstudio"`) e fare lookup in `config.ides` per ottenere il path dell'eseguibile.
+5. Validare l'esistenza del path dell'IDE e delegare l'esecuzione effettiva a `Start-Ide-With-AiSecrets.ps1` passando `-IdeType` e `-IdePath`.
 
 ### 15.2 Anatomia del dispatcher
 
@@ -1258,7 +1351,7 @@ Funzioni chiave:
 | Funzione | Responsabilità |
 |---|---|
 | `Resolve-RepositoryPath` | Calcola path assoluti relativi a `$PSScriptRoot` (cartella dello script) |
-| `Resolve-ScriptPath` | Verifica esistenza di uno script peer (`Start-Rider-With-AiSecrets.ps1`) |
+| `Resolve-ScriptPath` | Verifica esistenza di uno script peer (`Start-Ide-With-AiSecrets.ps1`) |
 | `New-DefaultConfig` | Crea `projects.json` dal template al primo avvio |
 | `Read-LauncherConfig` | Parse JSON con `ConvertFrom-Json` ed encoding UTF-8 esplicito |
 | `Validate-LauncherConfig` | Controlla campi obbligatori, path esistenti, no placeholder residui |
@@ -1267,7 +1360,7 @@ Funzioni chiave:
 
 ### 15.3 Validazione difensiva
 
-La funzione `Validate-LauncherConfig` esegue una serie di controlli **fail-fast**:
+La funzione `Validate-LauncherConfig` esegue una serie di controlli **fail-fast** a livello configurazione globale e per ogni progetto:
 
 ```powershell
 if ([string]::IsNullOrWhiteSpace($Config.credentialScope)) {
@@ -1282,15 +1375,15 @@ if ([string]::IsNullOrWhiteSpace($Config.infisicalHost)) {
     throw "Configurazione non valida: infisicalHost è obbligatorio."
 }
 
-if (-not (Test-Path $Config.riderPath)) {
-    throw "Rider non trovato nel percorso configurato: $($Config.riderPath)"
+if ($null -eq $Config.ides) {
+    throw "Configurazione non valida: ides è obbligatorio."
 }
 
 foreach ($project in $Config.projects) {
     if ([string]::IsNullOrWhiteSpace($project.key)) {
         throw "Configurazione non valida: ogni progetto deve avere key."
     }
-    # ... altri controlli
+    # ... altri controlli (name, solutionPath)
     if ($project.infisicalProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
         throw "Configurazione non valida: ... non ha infisicalProjectId valorizzato."
     }
@@ -1300,21 +1393,47 @@ foreach ($project in $Config.projects) {
 }
 ```
 
+Dopo la selezione del progetto, viene eseguita la **risoluzione e validazione dell'IDE**:
+
+```powershell
+$ideKey = $selected.ide
+
+if ([string]::IsNullOrWhiteSpace($ideKey)) {
+    throw "Il progetto '$($selected.key)' non ha il campo ide valorizzato."
+}
+
+$ideConfig = $Config.ides.$ideKey
+
+if ($null -eq $ideConfig) {
+    throw "IDE '$ideKey' non configurato nella sezione ides."
+}
+
+$idePath = $ideConfig.path
+
+if ([string]::IsNullOrWhiteSpace($idePath)) {
+    throw "Path non configurato per IDE '$ideKey'."
+}
+
+if (-not (Test-Path $idePath)) {
+    throw "IDE '$ideKey' non trovato nel percorso: $idePath"
+}
+```
+
 **Filosofia**: meglio fallire prima di chiamare Infisical che dopo. Diagnosi più chiara, zero rumore in audit log Infisical per chiamate destinate al fallimento.
 
 ### 15.4 Modalità di invocazione del dispatcher
 
 | Comando | Comportamento |
 |---|---|
-| `.\Start-AiRider.cmd` | Mostra lista, chiede input numerico interattivo |
-| `.\Start-AiRider.ps1 -List` | Stampa solo la lista, esce (utile per scripting) |
-| `.\Start-AiRider.ps1 -ProjectKey quoteflow` | Avvia direttamente il progetto con `key = quoteflow` |
-| `.\Start-AiRider.ps1 -ConfigPath C:\altra\config.json` | Usa una configurazione alternativa |
+| `.\Start-AiIde.cmd` | Mostra lista, chiede input numerico interattivo |
+| `.\Start-AiIde.ps1 -List` | Stampa solo la lista, esce (utile per scripting) |
+| `.\Start-AiIde.ps1 -ProjectKey quoteflow` | Avvia direttamente il progetto con `key = quoteflow` |
+| `.\Start-AiIde.ps1 -ConfigPath C:\altra\config.json` | Usa una configurazione alternativa |
 
 ### 15.5 Passaggio di controllo all'engine
 
 ```powershell
-$enginePath = Resolve-ScriptPath -FileName "Start-Rider-With-AiSecrets.ps1"
+$enginePath = Resolve-ScriptPath -FileName "Start-Ide-With-AiSecrets.ps1"
 
 & powershell `
     -ExecutionPolicy Bypass `
@@ -1324,9 +1443,12 @@ $enginePath = Resolve-ScriptPath -FileName "Start-Rider-With-AiSecrets.ps1"
     -Environment $config.environment `
     -CredentialScope $config.credentialScope `
     -InfisicalHost $config.infisicalHost `
-    -RiderPath $config.riderPath `
+    -IdeType $ideKey `
+    -IdePath $idePath `
     -SolutionPath $selected.solutionPath
 ```
+
+**Differenza chiave rispetto alla v1.0**: i parametri `-RiderPath` sono stati sostituiti dalla coppia `-IdeType` (identificatore logico, es. `"rider"` o `"visualstudio"`) e `-IdePath` (path eseguibile risolto). L'engine non conosce il dettaglio di quale IDE sta avviando: si limita a invocare `Start-Process` sul path che riceve.
 
 **Razionale del sub-process**: invocare l'engine in un **processo PowerShell figlio** consente di:
 
@@ -1344,7 +1466,7 @@ Un developer senior di solito lavora su **più solution**: progetti enterprise, 
 
 | Approccio | Problema |
 |---|---|
-| Uno script per progetto (`Start-AiRider-QuoteFlow.ps1`, `Start-AiRider-WCM.ps1`, …) | Esplosione del numero di script, drift della logica core, manutenzione duplicata |
+| Uno script per progetto (`Start-AiIde-QuoteFlow.ps1`, `Start-AiIde-WCM.ps1`, …) | Esplosione del numero di script, drift della logica core, manutenzione duplicata |
 | Hardcode dei progetti dentro l'engine | Modifica del codice ad ogni nuovo progetto, no separazione configurazione/codice |
 | Variabili d'ambiente per progetto attivo | Stato implicito globale, difficile cambiare progetto rapidamente |
 | **Configurazione dichiarativa + dispatcher numerico** ✅ | Single script, multi-tenant via JSON, side-effect-free |
@@ -1363,7 +1485,10 @@ flowchart TB
     Input -->|Q quit| Exit([Esce])
     Input -->|Numero valido| Selected["Progetto selezionato"]
     FindByKey --> Selected
-    Selected --> Engine["Invoca engine con parametri"]
+    Selected --> ResolveIde["Lookup IDE in config.ides<br/>(selected.ide → path)"]
+    ResolveIde --> ValidateIde{"IDE path<br/>esiste?"}
+    ValidateIde -->|No| FailIde([Throw: IDE non trovato])
+    ValidateIde -->|Sì| Engine["Invoca engine con<br/>-IdeType, -IdePath"]
 ```
 
 ### 16.3 Esempio output utente
@@ -1384,23 +1509,42 @@ Seleziona il numero del progetto da avviare oppure Q per uscire: 2
 ============================================================
 Progetto: QuoteFlow
 Key:      quoteflow
+IDE:      rider
+IDE Path: C:\Program Files\JetBrains\JetBrains Rider 2025.1\bin\rider64.exe
 Path:     C:\dev\quoteflow
 
 ============================================================
- AI Rider Bootstrap
+ AI IDE Bootstrap
 ============================================================
 [... output engine ...]
 ```
 
 ### 16.4 Scenari multi-progetto avanzati
 
-#### Scenario A: Progetti con Machine Identity differenti
+#### Scenario A: Progetti su IDE differenti
+
+Il caso d'uso più comune del multi-IDE: alcuni progetti girano su Rider (preferito per .NET moderno) mentre altri richiedono Visual Studio 2022 (es. progetti WPF legacy, integrazione con designer C++/CLI, progetti SQL Server Data Tools). Soluzione nativa: dichiarare entrambi gli IDE nella sezione `ides` di `projects.json` e impostare il campo `ide` di ogni progetto.
+
+```json
+{
+  "ides": {
+    "rider": { "path": "C:\\Program Files\\JetBrains\\JetBrains Rider 2025.1\\bin\\rider64.exe" },
+    "visualstudio": { "path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe" }
+  },
+  "projects": [
+    { "key": "modern-api", "ide": "rider", ... },
+    { "key": "legacy-wpf", "ide": "visualstudio", ... }
+  ]
+}
+```
+
+#### Scenario B: Progetti con Machine Identity differenti
 
 In casi enterprise, alcuni progetti possono richiedere Machine Identity con permessi diversi (es. un progetto "high-trust" che accede a segreti sensibili). Soluzione: usare `credentialScope` diversi per progetto.
 
 Sebbene `projects.json` come implementato attualmente abbia un singolo `credentialScope` a livello root, l'architettura è estendibile a override per-progetto (vedi Sezione 29).
 
-#### Scenario B: Stessa Machine Identity, environment diversi
+#### Scenario C: Stessa Machine Identity, environment diversi
 
 Comune: stessa identità tecnica, ma il progetto `quoteflow` usa env `dev` e `wcm` usa env `staging`. Anche questo è un punto di estensione: l'engine accetta già `-Environment` come parametro indipendente.
 
@@ -1449,11 +1593,16 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
   "credentialScope": "string (required)",
   "environment": "string (required)",
   "infisicalHost": "string (required, URL)",
-  "riderPath": "string (required, absolute path)",
+  "ides": {
+    "<ide-key>": {
+      "path": "string (required, absolute path to IDE executable)"
+    }
+  },
   "projects": [
     {
       "key": "string (required, unique within array)",
       "name": "string (required, display name)",
+      "ide": "string (required, must match a key in ides)",
       "solutionPath": "string (required, absolute path to .sln directory)",
       "infisicalProjectId": "string (required, NOT placeholder)"
     }
@@ -1461,7 +1610,16 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
 }
 ```
 
-### 18.2 Documentazione campo per campo
+### 18.2 Differenze rispetto alla v1.0
+
+| Aspetto | v1.0 | v2.0 (corrente) |
+|---|---|---|
+| Path IDE | `riderPath` (root, singolo) | `ides` dictionary con N entry |
+| Selezione IDE per progetto | Implicita (sempre Rider) | Esplicita via campo `ide` del progetto |
+| Aggiungere un nuovo IDE | Modifica di codice nello script engine | Aggiungere entry in `ides`, nessuna modifica di codice |
+| Naming convention IDE | — | Convenzione: snake_case (`rider`, `visualstudio`, `vscode`, `cursor`) |
+
+### 18.3 Documentazione campo per campo
 
 #### `credentialScope` (string, root)
 
@@ -1489,15 +1647,26 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
 - **Self-hosted**: usare URL custom, es. `https://infisical.company.internal`.
 - **Propagazione**: setta `$env:INFISICAL_API_URL` prima del login CLI.
 
-#### `riderPath` (string, root)
+#### `ides` (object, root) — NUOVO IN v2.0
 
-- **Significato**: path assoluto all'eseguibile `rider64.exe`.
-- **Esempi tipici**:
+- **Significato**: dizionario di IDE disponibili sulla workstation. Ogni entry è identificata da una chiave logica (es. `"rider"`, `"visualstudio"`) e contiene il path assoluto all'eseguibile.
+- **Struttura**:
+  ```json
+  "ides": {
+    "<ide-key>": {
+      "path": "C:\\absolute\\path\\to\\ide.exe"
+    }
+  }
   ```
-  C:\Program Files\JetBrains\JetBrains Rider 2025.1\bin\rider64.exe
-  C:\Users\<user>\AppData\Local\Programs\Rider\bin\rider64.exe   (installazione Toolbox)
-  ```
-- **Validazione**: lo script verifica `Test-Path $RiderPath`. Fallisce immediatamente se non trovato.
+- **Validazione**: il campo `ides` deve essere presente (anche se con una sola entry). Il path effettivo viene validato solo per l'IDE referenziato dal progetto selezionato (lazy validation), non per tutti gli IDE configurati.
+- **Convenzioni di key**:
+  | Key consigliata | IDE |
+  |---|---|
+  | `rider` | JetBrains Rider |
+  | `visualstudio` | Visual Studio 2022 (`devenv.exe`) |
+  | `vscode` | Visual Studio Code (futuro) |
+  | `cursor` | Cursor IDE (futuro) |
+  | `idea` | IntelliJ IDEA (per progetti Java/Kotlin in team misti) |
 
 #### `projects[].key` (string)
 
@@ -1510,12 +1679,22 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
 - **Significato**: nome human-friendly mostrato nella lista interattiva.
 - **Esempio**: `"GargiolasTech DevEx WCM"`, `"QuoteFlow Enterprise"`.
 
+#### `projects[].ide` (string) — NUOVO IN v2.0
+
+- **Significato**: chiave dell'IDE da utilizzare per questo progetto. Deve corrispondere esattamente a una chiave presente in `ides`.
+- **Validazione fail-fast**:
+  - Se vuoto/assente → `"Il progetto '<key>' non ha il campo ide valorizzato."`
+  - Se non presente in `ides` → `"IDE '<ide>' non configurato nella sezione ides."`
+  - Se il path dell'IDE non esiste su disco → `"IDE '<ide>' non trovato nel percorso: <path>"`
+- **Esempio**: `"ide": "rider"` o `"ide": "visualstudio"`.
+
 #### `projects[].solutionPath` (string)
 
 - **Significato**: path assoluto alla directory che contiene il file `.sln` (o più `.sln` per soluzioni multi-progetto).
 - **Comportamento**:
-  - Se la directory contiene **un solo `.sln`**, l'engine apre direttamente quel file.
-  - Se contiene **più `.sln`**, apre Rider sulla directory e l'utente seleziona la solution dall'IDE.
+  - Se la directory contiene **un solo `.sln`**, l'engine apre direttamente quel file passandolo come argomento all'IDE.
+  - Se contiene **più `.sln`**, apre l'IDE sulla directory e l'utente seleziona la solution dall'IDE.
+- **Compatibilità multi-IDE**: il pattern di passaggio argomento (`<ide.exe> "<path>"`) è supportato sia da `rider64.exe` che da `devenv.exe` (Visual Studio). Per IDE che richiedono sintassi diversa serve un wrapper (vedi Sezione 29).
 - **Validazione**: lo script verifica esistenza tramite `Test-Path`.
 
 #### `projects[].infisicalProjectId` (string)
@@ -1523,38 +1702,48 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
 - **Significato**: ID univoco del progetto Infisical (formato UUID-like fornito da Infisical).
 - **Vincolo critico**: il valore `REPLACE_WITH_INFISICAL_PROJECT_ID` (default del template) causa fail-fast in validazione, prevenendo configurazioni incomplete.
 
-### 18.3 Esempio completo di `projects.json` configurato
+### 18.4 Esempio completo di `projects.json` configurato
 
 ```json
 {
   "credentialScope": "gargiolastech-ai-tooling-dev",
   "environment": "dev",
   "infisicalHost": "https://app.infisical.com",
-  "riderPath": "C:\\Program Files\\JetBrains\\JetBrains Rider 2025.1\\bin\\rider64.exe",
+  "ides": {
+    "rider": {
+      "path": "C:\\Program Files\\JetBrains\\JetBrains Rider 2025.1\\bin\\rider64.exe"
+    },
+    "visualstudio": {
+      "path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe"
+    }
+  },
   "projects": [
     {
       "key": "wcm",
       "name": "GargiolasTech DevEx WCM",
+      "ide": "rider",
       "solutionPath": "C:\\dev\\gargiolastech-devex-wcm",
       "infisicalProjectId": "abcd1234-ef56-7890-1234-567890abcdef"
     },
     {
       "key": "quoteflow",
       "name": "QuoteFlow",
+      "ide": "rider",
       "solutionPath": "C:\\dev\\quoteflow",
       "infisicalProjectId": "fedc4321-ba98-7654-3210-fedcba987654"
     },
     {
-      "key": "payments",
-      "name": "Payments Gateway",
-      "solutionPath": "C:\\dev\\payments-gateway",
+      "key": "legacy-wpf",
+      "name": "Legacy WPF App",
+      "ide": "visualstudio",
+      "solutionPath": "C:\\dev\\legacy-wpf",
       "infisicalProjectId": "11223344-5566-7788-99aa-bbccddeeff00"
     }
   ]
 }
 ```
 
-### 18.4 Validazione lato CI (futuro)
+### 18.5 Validazione lato CI (futuro)
 
 Per ambienti enterprise dove `projects.json` venga distribuito tramite tool di configuration management (Ansible, Chef), è raccomandato uno **schema JSON formale** validabile via `Test-Json` di PowerShell o tool esterni:
 
@@ -1562,29 +1751,45 @@ Per ambienti enterprise dove `projects.json` venga distribuito tramite tool di c
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["credentialScope", "environment", "infisicalHost", "riderPath", "projects"],
+  "required": ["credentialScope", "environment", "infisicalHost", "ides", "projects"],
   "properties": {
     "credentialScope": { "type": "string", "minLength": 1 },
     "environment": { "type": "string", "enum": ["dev", "staging", "prod"] },
     "infisicalHost": { "type": "string", "format": "uri" },
-    "riderPath": { "type": "string", "minLength": 1 },
+    "ides": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
     "projects": {
       "type": "array",
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["key", "name", "solutionPath", "infisicalProjectId"],
+        "required": ["key", "name", "ide", "solutionPath", "infisicalProjectId"],
         "properties": {
           "key": { "type": "string", "pattern": "^[a-z0-9-]+$" },
           "name": { "type": "string", "minLength": 1 },
+          "ide": { "type": "string", "minLength": 1 },
           "solutionPath": { "type": "string", "minLength": 1 },
-          "infisicalProjectId": { "type": "string", "not": { "const": "REPLACE_WITH_INFISICAL_PROJECT_ID" } }
+          "infisicalProjectId": {
+            "type": "string",
+            "not": { "const": "REPLACE_WITH_INFISICAL_PROJECT_ID" }
+          }
         }
       }
     }
   }
 }
 ```
+
+Una validazione runtime aggiuntiva — non esprimibile in JSON Schema standard — è che ogni `projects[].ide` esista come chiave in `ides`. Questo controllo viene eseguito dallo script PowerShell post-deserializzazione (vedi Sezione 15.3).
 
 ---
 
@@ -1603,7 +1808,7 @@ Per ambienti enterprise dove `projects.json` venga distribuito tramite tool di c
 
 Continue legge variabili d'ambiente attraverso **due meccanismi**:
 
-1. **Direttamente dall'ambiente di processo**: variabili `$env:OPENAI_API_KEY` ereditate dal processo padre (Rider).
+1. **Direttamente dall'ambiente di processo**: variabili `$env:OPENAI_API_KEY` ereditate dal processo padre (l'IDE — Rider, Visual Studio con estensione Continue, …).
 2. **Da un file `.env` puntato da `CONTINUE_ENV_FILE`**: meccanismo che adottiamo.
 
 Lo script engine imposta:
@@ -1612,7 +1817,7 @@ Lo script engine imposta:
 $env:CONTINUE_ENV_FILE = $continueEnvPath
 ```
 
-Prima di avviare Rider, in modo che Continue (caricato come plugin Rider) erediti la variabile e legga il file.
+Prima di avviare l'IDE, in modo che Continue (caricato come plugin dell'IDE — Rider, Visual Studio o altro) erediti la variabile e legga il file.
 
 ### 19.3 Esempio di `continue.env` generato
 
@@ -1633,7 +1838,7 @@ I commenti `# Path: <path>` sono **aggiunti dallo script per tracciabilità** du
 
 ### 19.4 Configurazione `config.json` di Continue
 
-La configurazione di Continue (non sensibile) può essere mantenuta nel repository in `continue/config.json` (oggi cartella vuota, predisposta per estensione futura):
+La configurazione di Continue (non sensibile) può essere mantenuta nel repository, ad esempio in una cartella `continue/config.json` (non presente nel repo base ma punto di estensione naturale):
 
 ```json
 {
@@ -1662,14 +1867,14 @@ L'**interpolazione `${VAR}`** è una feature di Continue che risolve a runtime l
 sequenceDiagram
     participant Engine as Engine PS1
     participant FS as Filesystem
-    participant Rider
+    participant IDE as IDE (Rider/VS/…)
     participant Continue as Continue Plugin
 
     Engine->>FS: Write continue.env
     Engine->>Engine: $env:CONTINUE_ENV_FILE = path
-    Engine->>Rider: Start-Process rider64.exe
-    Rider->>Rider: Eredita CONTINUE_ENV_FILE
-    Rider->>Continue: Load plugin
+    Engine->>IDE: Start-Process IdePath
+    IDE->>IDE: Eredita CONTINUE_ENV_FILE
+    IDE->>Continue: Load plugin
     Continue->>Continue: Read $env:CONTINUE_ENV_FILE
     Continue->>FS: Open continue.env
     FS-->>Continue: KEY=VALUE pairs
@@ -1702,13 +1907,19 @@ L'approccio adottato è **identico a Continue**: lo script engine genera `aider.
 $env:AIDER_ENV_FILE = $aiderEnvPath
 ```
 
-### 20.3 Caricamento da terminale Rider
+### 20.3 Caricamento da terminale integrato
 
-In Rider, l'integrazione tipica è aprire un **terminale integrato** (`View → Tool Windows → Terminal`) e lanciare:
+L'integrazione tipica con Aider è aprire un **terminale integrato dell'IDE** e lanciare:
 
 ```bash
 aider --env-file %AIDER_ENV_FILE% src/MyProject.cs
 ```
+
+| IDE | Come aprire il terminale integrato |
+|---|---|
+| JetBrains Rider | `View → Tool Windows → Terminal` (Alt+F12) |
+| Visual Studio 2022 | `View → Terminal` (Ctrl+\`) |
+| Visual Studio Code | `View → Terminal` (Ctrl+\`) |
 
 In alternativa, configurare un alias persistente o uno script wrapper che legga automaticamente `AIDER_ENV_FILE`.
 
@@ -1733,15 +1944,168 @@ Aider tipicamente avvia una connessione al provider AI e mantiene la sessione ap
 - Continue (in-IDE) può rifiutare nuove richieste finché il file `.env` non viene rigenerato (richiede riavvio Rider).
 - Aider continua a usare la chiave caricata all'avvio, finché la sessione non scade lato provider.
 
-**Mitigazione**: dopo una rotazione di emergenza, chiudere e riaprire Rider per propagare le nuove chiavi.
+**Mitigazione**: dopo una rotazione di emergenza, chiudere e riaprire l'IDE per propagare le nuove chiavi (perché il file `.env` viene rigenerato all'avvio del launcher).
+
+### 20.6 Installer Aider: razionale architetturale
+
+Aider è un pacchetto Python (`aider-chat` su PyPI). L'installazione "ingenua" sarebbe `pip install aider-chat` nel Python di sistema, ma in contesti enterprise questo approccio presenta diverse problematiche.
+
+#### Problemi dell'installazione globale
+
+| Problema | Conseguenza |
+|---|---|
+| Pollution del global site-packages | Aider trascina ~80 dipendenze (tiktoken, litellm, openai, anthropic, tree-sitter, …) che possono entrare in conflitto con altri tool Python installati sulla stessa macchina |
+| Mancanza di isolamento di versione | Un upgrade aggressivo (`pip install --upgrade aider-chat`) può fare downgrade transitivo di librerie usate da altri progetti |
+| Permessi | Su Windows, l'installazione globale può richiedere admin se Python è in `Program Files`; il virtualenv vive sempre nel profilo utente |
+| Riproducibilità | Setup non riproducibili tra workstation se il Python di sistema diverge per minor version |
+| Cleanup | Disinstallare Aider richiede `pip uninstall` di decine di dipendenze; con un venv basta cancellare la cartella |
+
+#### Soluzione adottata
+
+L'installer adotta un **virtualenv dedicato** in `~/.venvs/aider-env`, ottenendo:
+
+1. **Isolamento totale**: nessun impatto sul Python di sistema o su altri venv.
+2. **Idempotenza**: ri-eseguire l'installer non rompe nulla; un eventuale upgrade è gestito da `pip install --upgrade`.
+3. **Disinstallabilità**: `Remove-Item -Recurse $VenvPath` rimuove tutto.
+4. **Eseguibile diretto**: lo script invoca `$VenvPath\Scripts\aider.exe` senza dover attivare il venv tramite script di activation. Robusto per uso non-interattivo.
+
+```mermaid
+flowchart TB
+    subgraph PySys["Python di sistema"]
+        SitePkg["site-packages globali"]
+    end
+
+    subgraph PyVenv["~/.venvs/aider-env (isolato)"]
+        VenvPkg["site-packages venv<br/>aider-chat + ~80 dependencies"]
+        VenvExe["Scripts\aider.exe"]
+        VenvPy["Scripts\python.exe"]
+    end
+
+    PythonLauncher["py -3.12<br/>(Python Launcher Windows)"]
+    PythonLauncher -->|"-m venv"| PyVenv
+    PythonLauncher -.->|"chiama"| PySys
+    Engine["Start-Ide-With-AiSecrets.ps1"] -.->|"genera"| EnvFile["aider.env"]
+    EnvFile -.->|"$AIDER_ENV_FILE"| VenvExe
+
+    style PySys fill:#b71c1c,stroke:#fff,color:#fff
+    style PyVenv fill:#1b5e20,stroke:#fff,color:#fff
+```
+
+### 20.7 Anatomia di `Install-Aider.ps1`
+
+```powershell
+param(
+    [string] $PythonVersion = "3.12",
+    [string] $VenvPath = "$HOME\.venvs\aider-env",
+    [switch] $ForceRecreate
+)
+```
+
+#### Pipeline di esecuzione
+
+| # | Step | Comando chiave | Failure mode |
+|---|---|---|---|
+| 1 | Verifica Python Launcher | `Get-Command py` | Throw se assente |
+| 2 | Verifica versione Python | `py -<version> --version` | Throw se la versione richiesta non è installata |
+| 3 | (Opzionale) Rimozione venv esistente | `Remove-Item -Recurse $VenvPath` (solo se `-ForceRecreate`) | — |
+| 4 | Creazione directory parent | `New-Item -ItemType Directory $venvParent` | — |
+| 5 | Creazione virtualenv | `py -<version> -m venv $VenvPath` | Throw se il path non è scrivibile |
+| 6 | Upgrade pip tooling | `python.exe -m pip install --upgrade pip setuptools wheel` | Throw su exit code ≠ 0 |
+| 7 | Installazione/upgrade Aider | `python.exe -m pip install --upgrade aider-chat` | Throw su exit code ≠ 0 |
+| 8 | Verifica eseguibile | `Test-Path $AiderExe` | Throw se assente |
+| 9 | Smoke test | `$AiderExe --version` | Throw su exit code ≠ 0 |
+
+#### Decisioni di design notevoli
+
+**Perché `py -<version>` invece di `python.exe` diretto?**
+
+Il [Python Launcher per Windows](https://docs.python.org/3/using/windows.html#launcher) è installato con qualsiasi installazione recente di Python da python.org. Espone una sintassi unica per selezionare una specifica versione di Python tra quelle installate:
+
+```powershell
+py -3.12 --version    # Forza Python 3.12 anche se 3.13 è il default
+py -3.13 --version    # Forza Python 3.13
+```
+
+Questo è cruciale in workstation enterprise dove convivono **più versioni di Python** (es. 3.11 per progetti legacy, 3.12 per nuovi progetti). Chiamare `python.exe` direttamente risolverebbe alla versione nel `PATH`, che è imprevedibile.
+
+**Perché upgrade esplicito di `pip setuptools wheel`?**
+
+L'installer di venv crea il virtualenv con la versione di pip bundled con Python. Su installazioni Python più vecchie di qualche mese, pip può essere obsoleto. L'upgrade preventivo evita warning durante l'installazione e abilita feature recenti (es. resolver migliorato di pip 23+).
+
+**Perché lo script non setta `PATH`?**
+
+Il PATH globale è una risorsa scarsa e contesa. Aggiungere `$VenvPath\Scripts` al `PATH` avrebbe effetti collaterali:
+
+- pollution per altri tool che chiamano `python.exe`;
+- conflitti se l'utente ha già un Python diverso nel PATH;
+- richiesta di restart della shell.
+
+La soluzione è chiamare `aider.exe` con path assoluto sempre, sia nelle istruzioni utente sia nel launcher.
+
+### 20.8 Uso quotidiano post-installazione
+
+#### Invocazione manuale di Aider
+
+Dal terminale integrato dell'IDE o da una qualsiasi PowerShell:
+
+```powershell
+& "$HOME\.venvs\aider-env\Scripts\aider.exe" `
+    --env-file $env:AIDER_ENV_FILE `
+    src\MyProject.cs
+```
+
+#### Alias persistente in `$PROFILE`
+
+Per rendere l'invocazione più ergonomica, definire un alias in `$PROFILE`:
+
+```powershell
+function aider {
+    & "$HOME\.venvs\aider-env\Scripts\aider.exe" --env-file $env:AIDER_ENV_FILE @args
+}
+```
+
+In questo modo `aider src/MyProject.cs` invoca automaticamente l'eseguibile corretto con il file di environment runtime.
+
+#### Aggiornamento di Aider
+
+Ri-eseguire `Install-Aider.cmd` esegue idempotentemente `pip install --upgrade aider-chat`. Non occorre `-ForceRecreate` salvo in caso di problemi:
+
+```powershell
+.\Install-Aider.cmd
+```
+
+#### Ricreazione completa del virtualenv
+
+Caso d'uso: upgrade del Python da 3.12 a 3.13. Il virtualenv è legato al Python con cui è stato creato e va ricostruito:
+
+```powershell
+.\Install-Aider.ps1 -PythonVersion 3.13 -ForceRecreate
+```
+
+#### Disinstallazione
+
+```powershell
+Remove-Item -Recurse -Force "$HOME\.venvs\aider-env"
+```
+
+Nessun residuo nel registry, nessun PATH cleanup necessario.
 
 ---
 
-## 21. Integrazione Rider
+## 21. Integrazione IDE (Rider, Visual Studio, …)
 
-### 21.1 Modalità di avvio
+### 21.1 Modello IDE-agnostic
 
-Lo script engine determina dinamicamente cosa passare a Rider come argomento:
+A partire dalla v2.0, l'engine non conosce alcun IDE specifico. Riceve come parametri:
+
+- `-IdeType` (es. `"rider"`, `"visualstudio"`) — utilizzato esclusivamente per logging/output diagnostico;
+- `-IdePath` — path assoluto dell'eseguibile da invocare via `Start-Process`.
+
+Tutta la logica IDE-specifica vive **fuori dall'engine**: nel file `projects.json` (dichiarativo) e nel dispatcher `Start-AiIde.ps1` (risoluzione `selected.ide` → `config.ides[<key>].path`).
+
+### 21.2 Modalità di avvio
+
+Lo script engine determina dinamicamente cosa passare all'IDE come argomento:
 
 ```powershell
 $solutionFiles = @(
@@ -1759,37 +2123,64 @@ else {
     $targetPath = $SolutionPath
 }
 
-Start-Process -FilePath $RiderPath -ArgumentList "`"$targetPath`""
+Start-Process -FilePath $IdePath -ArgumentList "`"$targetPath`""
 ```
 
-### 21.2 Comportamento
+### 21.3 Comportamento
 
 | Numero di `.sln` in `solutionPath` | Comportamento |
 |---|---|
 | 0 | **Fail-fast**: throw "Nessun file .sln trovato" |
 | 1 | Apertura **diretta** del singolo `.sln` |
-| 2+ | Apertura della **directory**: Rider mostra dialog di selezione solution |
+| 2+ | Apertura della **directory**: l'IDE mostra dialog di selezione solution (sia Rider che Visual Studio supportano l'apertura di una directory) |
 
-### 21.3 Ereditarietà environment
+### 21.4 Compatibilità del passaggio argomento
 
-Quando `Start-Process` avvia Rider, il processo figlio **eredita tutte le variabili d'ambiente** del processo PowerShell padre, incluse:
+Lo schema `<ide.exe> "<path>"` è supportato da:
+
+| IDE | Eseguibile | Comportamento con `.sln` | Comportamento con directory |
+|---|---|---|---|
+| JetBrains Rider | `rider64.exe` | Apre la solution | Apre la directory come solution browsable |
+| Visual Studio 2022 | `devenv.exe` | Apre la solution | Apre la directory ("Open Folder" mode) |
+| Visual Studio Code | `code.cmd` | Apre la solution come file | Apre la directory come workspace |
+| Cursor | `Cursor.exe` | Apre la solution come file | Apre la directory come workspace |
+
+Per IDE con sintassi argomenti diversa (es. quelli che richiedono `--open-folder` o flag specifici), l'engine attuale richiederebbe estensione (vedi Sezione 29).
+
+### 21.5 Ereditarietà environment
+
+Quando `Start-Process` avvia l'IDE, il processo figlio **eredita tutte le variabili d'ambiente** del processo PowerShell padre, incluse:
 
 - `CONTINUE_ENV_FILE`
 - `AIDER_ENV_FILE`
-- `INFISICAL_API_URL` (settato per il login CLI, è ininfluente per Rider ma viene comunque ereditata)
+- `INFISICAL_API_URL` (settato per il login CLI, è ininfluente per l'IDE ma viene comunque ereditata)
 
-Questo è il **meccanismo chiave** che permette ai plugin AI in Rider di vedere le configurazioni runtime senza alcuna intervento manuale.
+Questo è il **meccanismo chiave** che permette ai plugin AI nell'IDE di vedere le configurazioni runtime senza alcun intervento manuale, e funziona identicamente su qualsiasi IDE Windows perché si basa sull'ereditarietà standard delle variabili d'ambiente Win32.
 
-### 21.4 Plugin Rider richiesti
+### 21.6 Plugin per IDE supportati
 
-| Plugin | Origine | Funzione |
+| IDE | Plugin Continue | Marketplace |
 |---|---|---|
-| **Continue** | JetBrains Marketplace | Chat AI, autocompletion |
-| **.ignore** (opzionale) | JetBrains Marketplace | Gestione `.gitignore` avanzata |
-| **Database** (preinstallato) | — | — |
-| **Markdown** (preinstallato) | — | — |
+| JetBrains Rider | Continue per IntelliJ Platform | JetBrains Marketplace |
+| Visual Studio 2022 | Continue per Visual Studio (in beta al momento della scrittura — verificare disponibilità) | Visual Studio Marketplace |
+| Visual Studio Code | Continue per VS Code | VS Code Marketplace |
 
-L'installazione dei plugin va fatta **una volta per utente** tramite `File → Settings → Plugins`.
+L'installazione dei plugin va fatta **una volta per utente per ciascun IDE** tramite il marketplace nativo.
+
+### 21.7 Aggiungere un nuovo IDE — workflow
+
+```mermaid
+flowchart LR
+    A["Identificare path<br/>eseguibile IDE"] --> B["Aggiungere entry<br/>in projects.json:<br/>ides.&lt;new-key&gt;"]
+    B --> C["Per ogni progetto<br/>che usa il nuovo IDE:<br/>impostare ide=&lt;new-key&gt;"]
+    C --> D["Test:<br/>.\Start-AiIde.ps1 -List"]
+    D --> E["Lancio progetto"]
+
+    style A fill:#0d47a1,stroke:#fff,color:#fff
+    style E fill:#1b5e20,stroke:#fff,color:#fff
+```
+
+Zero modifiche allo script PowerShell. Tutto è dichiarativo.
 
 
 ---
@@ -1798,7 +2189,7 @@ L'installazione dei plugin va fatta **una volta per utente** tramite `File → S
 
 ### 22.1 Dettaglio della funzione `Export-InfisicalEnvFile`
 
-Il cuore del processo di iniezione segreti è la funzione `Export-InfisicalEnvFile` in `Start-Rider-With-AiSecrets.ps1`:
+Il cuore del processo di iniezione segreti è la funzione `Export-InfisicalEnvFile` in `Start-Ide-With-AiSecrets.ps1`:
 
 ```powershell
 function Export-InfisicalEnvFile {
@@ -2089,7 +2480,7 @@ flowchart TD
     Q1 -->|WCM Read| S4["cmdkey /list<br/>Re-bootstrap se assente"]
     Q1 -->|Infisical Login| S5["Verifica connettività<br/>Verifica IP allow-list<br/>Verifica Client Secret"]
     Q1 -->|Export segreti| S6["Verifica path Infisical<br/>Verifica role assegnato"]
-    Q1 -->|Lancio Rider| S7["Verifica riderPath<br/>Verifica permessi exec"]
+    Q1 -->|Lancio IDE| S7["Verifica ides.&lt;key&gt;.path<br/>Verifica permessi exec"]
 ```
 
 ### 25.2 Strumenti di diagnostica
@@ -2116,7 +2507,7 @@ $DebugPreference = "Continue"
 E lanciare con `-Verbose`:
 
 ```powershell
-.\Start-AiRider.ps1 -Verbose
+.\Start-AiIde.ps1 -Verbose
 ```
 
 ---
@@ -2130,23 +2521,32 @@ E lanciare con `-Verbose`:
 | `infisical non trovato` | CLI non installato o non in PATH | `scoop install infisical` oppure aggiungere `infisical.exe` al PATH |
 | `ClientId non trovato nel Credential Manager` | Bootstrap non eseguito o WCM corrotto | Rilanciare `bootstrap-ai-tooling.cmd` |
 | `Login Infisical fallito` | ClientId/Secret invalidi, IP non whitelisted, sospensione identità | Verificare Infisical UI: identità attiva, IP allow-list corretta |
-| `Rider non trovato nel percorso configurato` | `riderPath` errato in `projects.json` | Verificare path effettivo: `Get-ChildItem "C:\Program Files\JetBrains\*\bin\rider64.exe"` |
+| `Configurazione non valida: ides è obbligatorio.` | Sezione `ides` mancante nel JSON | Aggiungere sezione `ides` con almeno una entry valida (Sezione 18) |
+| `Il progetto '<key>' non ha il campo ide valorizzato.` | Campo `ide` mancante o vuoto nel progetto | Aggiungere `"ide": "rider"` (o altro key) al progetto |
+| `IDE '<ide>' non configurato nella sezione ides.` | Il valore di `ide` nel progetto non corrisponde a nessuna chiave in `ides` | Verificare corrispondenza esatta tra `projects[].ide` e chiavi in `ides` |
+| `IDE '<ide>' non trovato nel percorso: <path>` | Path eseguibile dell'IDE errato o IDE non installato | Verificare `Get-ChildItem "C:\Program Files\JetBrains\*\bin\rider64.exe"` o equivalente per altri IDE |
 | `Nessun file .sln trovato in: ...` | `solutionPath` punta a directory senza `.sln` | Correggere `solutionPath` in `projects.json` |
 | `Configurazione non valida: ... non ha infisicalProjectId valorizzato` | Template non personalizzato | Sostituire `REPLACE_WITH_INFISICAL_PROJECT_ID` con il vero project ID |
 | `Errore durante export Infisical per path '/X'` | Path non esiste in Infisical, environment errato, role insufficiente | Verificare in UI: path esistente, role con read permission |
 | `ExecutionPolicy bloccata` | Policy macchina restrittiva | Lanciare CMD wrapper (usa `-ExecutionPolicy Bypass`) oppure `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` |
-| `Impossibile leggere o parsare il file di configurazione` | JSON malformato | Validare con `Get-Content projects.json | ConvertFrom-Json` |
+| `Impossibile leggere o parsare il file di configurazione` | JSON malformato | Validare con `Get-Content projects.json \| ConvertFrom-Json` |
 | `key duplicata` | Due progetti con stesso `key` | Renaming progetto |
+| `Python launcher 'py' not found.` (Install-Aider) | Python Launcher Windows non installato | Reinstallare Python da python.org assicurandosi che "Install launcher for all users" sia selezionato |
+| `Python <version> not found.` (Install-Aider) | Versione Python richiesta non installata | Installare la versione richiesta oppure usare `-PythonVersion <altra>` |
+| `Failed to upgrade pip tooling.` (Install-Aider) | Problemi rete, proxy aziendale, certificati corporate non riconosciuti da pip | Configurare `pip.ini` con `index-url` aziendale e certificato CA |
+| `Failed to install aider-chat.` (Install-Aider) | Stessa diagnosi di sopra; oppure dipendenza nativa che fallisce build | Verificare log pip; su Windows 10 vecchi può servire C++ Build Tools per alcune dipendenze |
+| `Aider executable not found after installation` (Install-Aider) | Virtualenv corrotto o creazione fallita silenziosamente | Rilanciare con `-ForceRecreate` |
+| `Aider verification failed.` (Install-Aider) | Aider installato ma `--version` fallisce | Investigare log; spesso correlato a versione Python non supportata da Aider (vedi release notes Aider) |
 
 ### 26.2 Esempi di sessione di troubleshooting
 
 #### Esempio 1: WCM Entry mancante
 
 ```powershell
-PS> .\Start-AiRider.cmd
+PS> .\Start-AiIde.cmd
 [...]
 ============================================================
- AI Rider Bootstrap
+ AI IDE Bootstrap
 ============================================================
 Errore: ClientId non trovato nel Credential Manager. Scope: gargiolastech-ai-tooling-dev
 
@@ -2164,7 +2564,7 @@ PS> .\bootstrap-ai-tooling.cmd
 #### Esempio 2: Login Infisical fallito
 
 ```powershell
-PS> .\Start-AiRider.cmd
+PS> .\Start-AiIde.cmd
 [...]
 ============================================================
  Login Infisical
@@ -2185,7 +2585,7 @@ PS> infisical login --method universal-auth --client-id "<id>" --client-secret "
 #### Esempio 3: Path Infisical non trovato
 
 ```powershell
-PS> .\Start-AiRider.cmd
+PS> .\Start-AiIde.cmd
 [...]
 Export secret path: /aider
 Errore durante export Infisical per path '/aider'.
@@ -2225,15 +2625,18 @@ Aprire `~/.gargiolastech/ai-tooling/projects.json` e aggiungere un elemento all'
 {
   "key": "payments",
   "name": "Payments Gateway",
+  "ide": "rider",
   "solutionPath": "C:\\dev\\payments-gateway",
   "infisicalProjectId": "11223344-5566-7788-99aa-bbccddeeff00"
 }
 ```
 
+> **Nota multi-IDE**: il campo `ide` è obbligatorio dalla v2.0. Il valore deve corrispondere a una chiave esistente nella sezione `ides` di `projects.json`. Se l'IDE che si vuole usare non è ancora configurato, aggiungerlo prima nella sezione `ides` (Sezione 18).
+
 #### Step 3 — Validazione
 
 ```powershell
-.\Start-AiRider.ps1 -List
+.\Start-AiIde.ps1 -List
 ```
 
 Output atteso: il nuovo progetto deve apparire nella lista. Errori di validazione sono fail-fast con messaggi specifici (vedi Sezione 26).
@@ -2241,10 +2644,10 @@ Output atteso: il nuovo progetto deve apparire nella lista. Errori di validazion
 #### Step 4 — Test di avvio
 
 ```powershell
-.\Start-AiRider.ps1 -ProjectKey payments
+.\Start-AiIde.ps1 -ProjectKey payments
 ```
 
-Se tutto è configurato correttamente, Rider si avvia con i segreti AI iniettati.
+Se tutto è configurato correttamente, l'IDE associato al progetto si avvia con i segreti AI iniettati.
 
 ### 27.2 Pattern enterprise: distribuire `projects.json` via tool aziendale
 
@@ -2329,7 +2732,7 @@ cmdkey /list:gargiolastech-ai-tooling-dev-client-id
 cmdkey /list:gargiolastech-ai-tooling-dev-client-secret
 
 # Test funzionale
-.\Start-AiRider.ps1 -List
+.\Start-AiIde.ps1 -List
 ```
 
 #### Lato Infisical (cleanup)
@@ -2409,23 +2812,32 @@ Il repository è progettato come **MVP estensibile**. Identifichiamo le direzion
 - Riscrivere gli script in **bash/zsh** o, meglio, in **PowerShell Core 7+** (cross-platform).
 - Astrarre il "credential store" dietro un'interfaccia comune.
 
-### 29.4 Estensione: Support a VS Code/Cursor
+### 29.4 Estensione: Support a VS Code/Cursor — ⚠️ già abilitata in v2.0 a livello config
 
-**Caso d'uso**: alcuni developer preferiscono VS Code o Cursor (AI-IDE).
+**Stato attuale**: l'engine è già IDE-agnostic (`-IdeType`, `-IdePath`). Aggiungere VS Code o Cursor richiede **solo modifiche dichiarative** in `projects.json`:
 
-**Approccio**: lo script engine è già parametrico (`-RiderPath`, `-SolutionPath`). Basta un nuovo wrapper:
-
-```powershell
-# Start-AiCursor.ps1
-.\Start-Rider-With-AiSecrets.ps1 `
-    -ProjectId $selected.infisicalProjectId `
-    -Environment $config.environment `
-    -CredentialScope $config.credentialScope `
-    -RiderPath "C:\Users\<user>\AppData\Local\Programs\cursor\Cursor.exe" `
-    -SolutionPath $selected.solutionPath
+```json
+{
+  "ides": {
+    "vscode": {
+      "path": "C:\\Users\\<user>\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"
+    },
+    "cursor": {
+      "path": "C:\\Users\\<user>\\AppData\\Local\\Programs\\cursor\\Cursor.exe"
+    }
+  },
+  "projects": [
+    { "key": "frontend", "ide": "vscode", ... },
+    { "key": "data-science", "ide": "cursor", ... }
+  ]
+}
 ```
 
-**Limitazione attuale**: il parametro si chiama `RiderPath`. Refactoring consigliato: rinominare in `IdePath`.
+**Lavoro residuo** (per maturità completa):
+
+- Validazione che il plugin Continue esista nell'IDE selezionato (al momento c'è solo controllo sul path).
+- Supporto a CLI args diversi se l'IDE non accetta `<ide.exe> "<path>"` come sintassi standard (es. VS Code usa `code --new-window`).
+- Helper per discovery automatica del path eseguibile di IDE comuni (`Get-IdeInstallation -Type vscode`).
 
 ### 29.5 Estensione: Caching dei segreti per modalità offline
 
@@ -2464,8 +2876,59 @@ Inserire nello script engine un endpoint POST verso un servizio interno per trac
 - Frequency d'uso per developer.
 - Path Infisical più consumati.
 - Latenze tipiche.
+- Distribuzione di utilizzo per IDE (Rider vs VS vs altri).
 
 **Rispetto privacy**: zero prompt logging, zero contenuto codice. Solo metadati operazionali.
+
+### 29.8 Estensione: Argomenti per-IDE configurabili
+
+**Caso d'uso**: alcuni IDE accettano argomenti aggiuntivi all'avvio (es. VS Code con `--new-window`, Rider con `--wait` per integrazione con altri tool).
+
+**Modifica proposta** a `projects.json`:
+
+```json
+"ides": {
+  "vscode": {
+    "path": "C:\\...\\Code.exe",
+    "args": ["--new-window", "--disable-telemetry"]
+  },
+  "rider": {
+    "path": "C:\\...\\rider64.exe",
+    "args": []
+  }
+}
+```
+
+**Modifica engine**: estendere il `Start-Process` per concatenare `args` di IDE con il `targetPath` calcolato.
+
+### 29.9 Estensione: Discovery automatica path IDE
+
+**Caso d'uso**: ridurre l'attrito di configurazione iniziale. Anziché chiedere al developer di scoprire manualmente `rider64.exe`, lo script esegue auto-discovery.
+
+**Approccio**:
+
+```powershell
+function Find-IdeInstallation {
+    param([string]$IdeType)
+
+    switch ($IdeType) {
+        "rider" {
+            return Get-ChildItem `
+                "$env:ProgramFiles\JetBrains\*\bin\rider64.exe",
+                "$env:LOCALAPPDATA\Programs\Rider\bin\rider64.exe" `
+                -ErrorAction SilentlyContinue |
+                Select-Object -First 1 -ExpandProperty FullName
+        }
+        "visualstudio" {
+            # Usa vswhere per discovery affidabile di Visual Studio
+            $vswhere = "$env:ProgramFiles(x86)\Microsoft Visual Studio\Installer\vswhere.exe"
+            return & $vswhere -latest -property productPath
+        }
+    }
+}
+```
+
+Da invocare al primo avvio per popolare automaticamente `ides[<type>].path`.
 
 ---
 
@@ -2481,8 +2944,16 @@ C:\Users\<utente>\
 │       └── runtime\                            ← File effimeri
 │           ├── continue.env
 │           └── aider.env
-└── .continue\
-    └── config.json                             ← Config Continue (gestita da plugin)
+├── .continue\
+│   └── config.json                             ← Config Continue (gestita da plugin)
+└── .venvs\
+    └── aider-env\                              ← Virtualenv Python isolato per Aider
+        ├── Lib\
+        ├── Scripts\
+        │   ├── aider.exe                       ← Eseguibile Aider
+        │   ├── pip.exe
+        │   └── python.exe                      ← Python del venv
+        └── pyvenv.cfg
 
 C:\dev\
 ├── gargiolastech-ai-tooling\                   ← Repo del launcher
@@ -2499,29 +2970,30 @@ gargiolastech-ai-tooling/
 ├── README.md
 ├── CHANGELOG.md                                ← Versioning del launcher
 ├── docs/
-│   ├── architecture.md
-│   ├── onboarding.md
-│   └── troubleshooting.md
-├── continue/
+│   └── DOCUMENTATION.md                        ← Documentazione enterprise (corrente)
+├── images/
+│   ├── Icona.ico                               ← Icona launcher (corrente)
+│   └── Icona.png                               ← Asset PNG (corrente)
+├── continue/                                   ← Estensione futura
 │   ├── config.template.json                    ← Template Continue config
 │   └── rules/                                  ← Custom rules per Continue
 │       ├── csharp-style.md
 │       └── dotnet-best-practices.md
-├── aider/
-│   ├── .aider.conf.yml.template               ← Template config Aider
+├── aider/                                      ← Estensione futura
+│   ├── .aider.conf.yml.template                ← Template config Aider
 │   └── system-prompts/
 │       └── senior-backend.md
-├── prompts/
+├── prompts/                                    ← Estensione futura
 │   ├── refactoring/
 │   ├── code-review/
 │   └── documentation/
 ├── scripts/
-│   ├── windows/                                ← Esistenti
+│   ├── windows/                                ← Esistenti (Start-AiIde.*, etc.)
 │   ├── linux/                                  ← Future
 │   └── macos/                                  ← Future
 ├── templates/
-│   ├── projects.json.template
-│   └── projects.schema.json                    ← JSON Schema per validation
+│   ├── projects.json.template                  ← Corrente (schema v2.0 con ides)
+│   └── projects.schema.json                    ← Estensione futura: JSON Schema per validation
 └── .github/
     └── workflows/
         ├── lint-scripts.yml                    ← PSScriptAnalyzer
@@ -2565,7 +3037,7 @@ In contesti **MSP** (Managed Service Provider) o di **sviluppo per più clienti*
 Esempio:
 
 ```powershell
-.\Start-AiRider.ps1 -ConfigPath "$env:USERPROFILE\.gargiolastech\customers\acme\projects.json"
+.\Start-AiIde.ps1 -ConfigPath "$env:USERPROFILE\.gargiolastech\customers\acme\projects.json"
 ```
 
 ### 31.3 Disaster Recovery
@@ -2738,14 +3210,15 @@ Per un nuovo developer:
   - Client ID
   - Client Secret
   - Lista progetti (Project ID, nomi)
-- [ ] **Step 4** — Developer installa prerequisiti: Rider, Infisical CLI, Git, Continue plugin.
+- [ ] **Step 4** — Developer installa prerequisiti: IDE preferito (Rider e/o Visual Studio 2022), Infisical CLI, Git, Python 3.12 (con Python Launcher), Continue plugin per l'IDE selezionato.
 - [ ] **Step 5** — Developer clona il repo `gargiolastech-ai-tooling`.
 - [ ] **Step 6** — Developer esegue `bootstrap-ai-tooling.cmd` e inserisce le credenziali.
-- [ ] **Step 7** — Developer esegue `Start-AiRider.cmd` (primo avvio crea config).
-- [ ] **Step 8** — Developer edita `projects.json` con i propri progetti.
-- [ ] **Step 9** — Developer esegue di nuovo `Start-AiRider.cmd` e verifica che Rider si apra con Continue funzionante.
-- [ ] **Step 10** — Developer esegue `Install-AiRiderDesktopShortcut.ps1` per shortcut sul desktop.
-- [ ] **Step 11** — Developer firma documento di acknowledgment delle security best practices.
+- [ ] **Step 7** — Developer esegue `Install-Aider.cmd` per provisioning del virtualenv Aider.
+- [ ] **Step 8** — Developer esegue `Start-AiIde.cmd` (primo avvio crea config).
+- [ ] **Step 9** — Developer edita `projects.json` con i propri progetti.
+- [ ] **Step 10** — Developer esegue di nuovo `Start-AiIde.cmd` e verifica che l'IDE selezionato per il progetto si apra con Continue funzionante.
+- [ ] **Step 11** — Developer esegue `Install-AiIdeDesktopShortcut.ps1` per shortcut sul desktop.
+- [ ] **Step 12** — Developer firma documento di acknowledgment delle security best practices.
 
 ### 33.2 Comando "all-in-one" per onboarding
 
@@ -2766,17 +3239,20 @@ if (-not (Test-Path $repoDir)) {
     git clone https://github.com/gargiolastech/gargiolastech-ai-tooling.git $repoDir
 }
 
-# 2. Bootstrap WCM
+# 2. Bootstrap WCM (credenziali Machine Identity)
 & "$scriptDir\Set-InfisicalCredential.ps1" `
     -CredentialScope "gargiolastech-ai-tooling-dev" `
     -ClientId $ClientId `
     -ClientSecret $ClientSecret
 
-# 3. Trigger primo avvio (genera projects.json)
-& "$scriptDir\Start-AiRider.ps1"
+# 3. Provisioning Aider (virtualenv isolato)
+& "$scriptDir\Install-Aider.ps1"
 
-# 4. Installa shortcut
-& "$scriptDir\Install-AiRiderDesktopShortcut.ps1"
+# 4. Trigger primo avvio (genera projects.json)
+& "$scriptDir\Start-AiIde.ps1"
+
+# 5. Installa shortcut
+& "$scriptDir\Install-AiIdeDesktopShortcut.ps1"
 
 Write-Host "Onboarding completato. Personalizza projects.json e riavvia il launcher."
 ```
@@ -2843,14 +3319,23 @@ Per la maggior parte dei team il design attuale è sufficiente.
 
 **A**: La workstation developer non ha identità native verso questi sistemi. Sarebbe richiesto un proxy di autenticazione (federazione SSO → STS → assume role → fetch secret) molto più complesso del modello attuale Machine Identity.
 
-### Q6: Posso eseguire più istanze di Rider simultaneamente per più progetti?
+### Q6: Posso eseguire più istanze di IDE simultaneamente per più progetti?
 
-**A**: Sì. Ogni invocazione di `Start-AiRider.ps1` genera i file `.env` runtime **sovrascrivendo** la versione precedente. Se apri due Rider in sequenza:
-- Il primo Rider è già stato avviato con i suoi `.env` letti all'apertura.
-- Il secondo Rider sovrascrive i `.env`, ma legge i suoi al proprio avvio.
-- I due processi Rider non si interferiscono runtime (i plugin hanno cache in-memory).
+**A**: Sì. Ogni invocazione di `Start-AiIde.ps1` genera i file `.env` runtime **sovrascrivendo** la versione precedente. Se apri due IDE (anche eterogenei: es. Rider per un progetto e Visual Studio per un altro) in sequenza:
+- Il primo IDE è già stato avviato con i suoi `.env` letti all'apertura.
+- Il secondo IDE sovrascrive i `.env`, ma legge i suoi al proprio avvio.
+- I due processi IDE non si interferiscono runtime (i plugin hanno cache in-memory).
 
-Edge case: se chiudi il primo Rider e lo riapri (con re-launch del plugin Continue) **senza ripassare dal launcher**, leggerà gli `.env` ora appartenenti al secondo progetto. **Workaround**: usare sempre il launcher per ogni apertura.
+Edge case: se chiudi il primo IDE e lo riapri (con re-launch del plugin Continue) **senza ripassare dal launcher**, leggerà gli `.env` ora appartenenti al secondo progetto. **Workaround**: usare sempre il launcher per ogni apertura.
+
+### Q6.1: Cosa succede se due progetti usano IDE diversi e li avvio contemporaneamente?
+
+**A**: Funziona correttamente. L'engine produce gli stessi file `continue.env` e `aider.env` indipendentemente dall'IDE: i plugin Continue/Aider leggono il file una sola volta all'avvio dell'IDE. Quindi:
+- Avvio progetto A su Rider → `.env` scritti con segreti di A → Rider apre e legge.
+- Avvio progetto B su Visual Studio → `.env` sovrascritti con segreti di B → VS apre e legge.
+- Rider continua a usare i segreti di A (che ha in cache), VS quelli di B.
+
+Se i segreti AI sono gli stessi tra A e B (perché provengono da `/global`), l'overwrite è idempotente. Se differiscono per via di `/continue-A` vs `/continue-B`, c'è un trade-off di sicurezza: l'IDE che ha letto per primo mantiene segreti diversi da quelli ora su disco. Per la maggior parte degli use case è accettabile.
 
 ### Q7: Come gestire ambienti staging/prod?
 
@@ -2920,24 +3405,73 @@ docker run --rm -p 8080:8080 \
 
 E configurando `infisicalHost: "http://localhost:8080"` in `projects.json`.
 
+### Q16: Come faccio a far funzionare il launcher con un IDE non listato (es. Neovim)?
+
+**A**: Aggiungere una entry in `ides`:
+
+```json
+"ides": {
+  "neovim": {
+    "path": "C:\\Program Files\\Neovim\\bin\\nvim-qt.exe"
+  }
+}
+```
+
+E nei progetti che vogliono usarlo: `"ide": "neovim"`. **Caveat**: il launcher invoca l'IDE con la sintassi `<exe> "<path>"`. Per IDE che richiedono comandi diversi (es. `code --new-window`, `cursor --reuse-window`), serve l'estensione descritta in Sezione 29.8 (argomenti per-IDE).
+
+### Q17: Diverso IDE per progetti diversi crea problemi di sicurezza?
+
+**A**: No, perché:
+- I segreti AI sono **gli stessi** indipendentemente dall'IDE (provengono da Infisical, vengono iniettati come `.env` runtime).
+- Il modello di sicurezza è uniforme: WCM → Infisical → file effimero → variabile d'ambiente → IDE figlio.
+- L'unica differenza è il binario eseguibile lanciato. Tutti i pattern di defense in depth (DPAPI, Machine Identity, scope, environment) rimangono invariati.
+
+L'unica cosa da verificare è che ogni IDE supporti il plugin Continue (o un equivalente) per consumare i segreti via `CONTINUE_ENV_FILE`. Aider funziona da terminale integrato in qualsiasi IDE.
+
+### Q18: Perché Aider viene installato in un virtualenv invece che globalmente?
+
+**A**: Per quattro motivi:
+
+1. **Isolamento dipendenze**: Aider trascina ~80 pacchetti Python. Installandolo globalmente, questi entrano in collisione potenziale con altri tool Python sulla stessa macchina.
+2. **Reversibilità**: disinstallare Aider richiederebbe `pip uninstall` di tutte le sue dipendenze (impossibile da fare in modo pulito). Cancellare la cartella `~/.venvs/aider-env` è atomico.
+3. **Upgrade sicuri**: `pip install --upgrade aider-chat` nel global site-packages può fare downgrade transitivo di pacchetti usati da altri tool. Nel venv è confinato.
+4. **Riproducibilità multi-workstation**: tutti i developer hanno un Aider venv "uguale", indipendentemente da cosa sia installato globalmente.
+
+Vedi Sezione 20.6 per il razionale architetturale completo.
+
+### Q19: Posso usare Aider installato globalmente invece del venv creato da Install-Aider?
+
+**A**: Tecnicamente sì, ma non è il pattern supportato. Il launcher non chiama mai `aider` direttamente: genera solo `aider.env` e setta `$env:AIDER_ENV_FILE`. Spetta all'utente lanciare Aider con `--env-file %AIDER_ENV_FILE%`. Quale binario `aider` viene usato è una scelta dell'utente nel suo `$PROFILE` o nelle invocazioni dirette.
+
+Detto questo, **la documentazione ufficiale e gli alias suggeriti (Sezione 20.8) assumono l'eseguibile in `~/.venvs/aider-env/Scripts/aider.exe`**. Deviare da questo pattern significa rinunciare ai vantaggi di isolamento descritti in Q18.
+
+### Q20: Cosa succede se ho già Aider installato globalmente prima di eseguire Install-Aider?
+
+**A**: Nulla. Il venv è completamente isolato: il `python.exe` del venv usa il suo proprio site-packages e ignora del tutto il global site-packages. Le due installazioni coesistono senza conflitti. È sicuro disinstallare la versione globale (`pip uninstall aider-chat` nel Python di sistema) dopo aver verificato che il venv funziona.
+
 ---
 
 ## Conclusione
 
-Questa documentazione descrive un'architettura **runtime-first, zero-trust** per la gestione dei segreti AI nella developer experience .NET. Le decisioni architetturali sono guidate da tre principi non negoziabili:
+Questa documentazione descrive un'architettura **runtime-first, zero-trust, IDE-agnostic** per la gestione dei segreti AI nella developer experience .NET. Le decisioni architetturali sono guidate da quattro principi non negoziabili:
 
 1. **Nessun segreto AI risiede mai durevolmente sul disco** (eccetto i Client ID/Secret di bootstrap, protetti da DPAPI).
 2. **Il repository è inerte**: zero segreti, zero PII, zero configurazione utente-specifica.
 3. **Ogni avvio è una fresh injection**: ciò che vale è quanto è in Infisical *in questo momento*, non quanto era ieri.
+4. **L'IDE è un dettaglio di configurazione, non di codice**: l'engine non conosce Rider o Visual Studio, riceve un path eseguibile e una solution. Aggiungere un nuovo IDE è una modifica dichiarativa al JSON.
+
+A questi si aggiunge un quinto principio operativo introdotto in v2.1:
+
+5. **Le dipendenze runtime sono isolate**: Aider vive in un virtualenv dedicato per non contaminare l'ambiente Python di sistema, ed è installabile/aggiornabile/disinstallabile in modo atomico.
 
 La soluzione è **deliberatamente semplice**: poche centinaia di righe di PowerShell + un singolo file JSON. La semplicità è una feature di sicurezza: il codice è ispezionabile in un'oretta, non ci sono dipendenze opache, ogni decisione è giustificabile in termini di trade-off espliciti.
 
-L'estendibilità è **per design**: cross-platform, multi-IDE, multi-tenant, gateway-based architecture sono tutti percorsi naturali partendo dalla base attuale.
+L'estendibilità è **per design**: cross-platform, multi-IDE (già abilitato in v2.0), provisioning automatizzato (in v2.1), multi-tenant, gateway-based architecture sono tutti percorsi naturali partendo dalla base attuale.
 
-> *"Repository inerte. Segreti effimeri. Runtime autoritativo. Identità tecnica disaccoppiata."*
+> *"Repository inerte. Segreti effimeri. Runtime autoritativo. Identità tecnica disaccoppiata. IDE intercambiabile. Dipendenze isolate."*
 
 ---
 
-**Versione documento:** 1.0
-**Ultima revisione:** 22 maggio 2026
+**Versione documento:** 2.1 — Aider installer integrato
+**Ultima revisione:** 23 maggio 2026
 **Manutentori:** Platform Engineering Team — GargiolasTech

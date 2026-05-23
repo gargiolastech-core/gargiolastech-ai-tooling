@@ -107,16 +107,16 @@ function Validate-LauncherConfig {
         throw "Configurazione non valida: infisicalHost è obbligatorio."
     }
 
-    if ([string]::IsNullOrWhiteSpace($Config.riderPath)) {
-        throw "Configurazione non valida: riderPath è obbligatorio."
-    }
-
-    if (-not (Test-Path $Config.riderPath)) {
-        throw "Rider non trovato nel percorso configurato: $($Config.riderPath)"
+    if ($null -eq $Config.ides) {
+    throw "Configurazione non valida: ides è obbligatorio."
     }
 
     if ($null -eq $Config.projects -or $Config.projects.Count -eq 0) {
         throw "Configurazione non valida: projects deve contenere almeno un progetto."
+    }
+
+    if ([string]::IsNullOrWhiteSpace($Config.infisicalProjectId) -or $Config.infisicalProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
+    throw "Configurazione non valida: infisicalProjectId root non valorizzato."
     }
 
     foreach ($project in $Config.projects) {
@@ -130,10 +130,6 @@ function Validate-LauncherConfig {
 
         if ([string]::IsNullOrWhiteSpace($project.solutionPath)) {
             throw "Configurazione non valida: il progetto '$($project.key)' non ha solutionPath."
-        }
-
-        if ([string]::IsNullOrWhiteSpace($project.infisicalProjectId) -or $project.infisicalProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
-            throw "Configurazione non valida: il progetto '$($project.key)' non ha infisicalProjectId valorizzato."
         }
 
         if (-not (Test-Path $project.solutionPath)) {
@@ -206,13 +202,40 @@ if ($List) {
 }
 
 Show-Projects -Projects $config.projects
-$selected = Select-Project -Projects $config.projects -RequestedKey $ProjectKey
 
-$enginePath = Resolve-ScriptPath -FileName "Start-Rider-With-AiSecrets.ps1"
+$selected = Select-Project `
+    -Projects $config.projects `
+    -RequestedKey $ProjectKey
+
+$ideKey = $selected.ide
+
+if ([string]::IsNullOrWhiteSpace($ideKey)) {
+    throw "Il progetto '$($selected.key)' non ha il campo ide valorizzato."
+}
+
+$ideConfig = $Config.ides.$ideKey
+
+if ($null -eq $ideConfig) {
+    throw "IDE '$ideKey' non configurato nella sezione ides."
+}
+
+$idePath = $ideConfig.path
+
+if ([string]::IsNullOrWhiteSpace($idePath)) {
+    throw "Path non configurato per IDE '$ideKey'."
+}
+
+if (-not (Test-Path $idePath)) {
+    throw "IDE '$ideKey' non trovato nel percorso: $idePath"
+}
+
+$enginePath = Resolve-ScriptPath -FileName "Start-Ide-With-AiSecrets.ps1"
 
 Write-Section "Avvio progetto"
 Write-Host "Progetto: $($selected.name)"
 Write-Host "Key:      $($selected.key)"
+Write-Host "IDE:      $ideKey"
+Write-Host "IDE Path: $idePath"
 Write-Host "Path:     $($selected.solutionPath)"
 Write-Host ""
 
@@ -220,13 +243,14 @@ Write-Host ""
     -ExecutionPolicy Bypass `
     -NoProfile `
     -File $enginePath `
-    -ProjectId $selected.infisicalProjectId `
+    -ProjectId $config.infisicalProjectId `
     -Environment $config.environment `
     -CredentialScope $config.credentialScope `
     -InfisicalHost $config.infisicalHost `
-    -RiderPath $config.riderPath `
+    -IdeType $ideKey `
+    -IdePath $idePath `
     -SolutionPath $selected.solutionPath
 
 if ($LASTEXITCODE -ne 0) {
-    throw "Start-Rider-With-AiSecrets.ps1 terminato con ExitCode $LASTEXITCODE."
+    throw "Start-Ide-With-AiSecrets.ps1 terminato con ExitCode $LASTEXITCODE."
 }
