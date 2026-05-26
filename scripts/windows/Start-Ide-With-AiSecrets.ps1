@@ -19,6 +19,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# ---------------------------------------------------------------
+# Validazione fail-fast: se ProjectId è ancora il placeholder
+# del template, fermarsi prima di chiamare Infisical (che
+# ritornerebbe un errore criptico).
+# ---------------------------------------------------------------
+
+if ($ProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
+    throw "ProjectId non valorizzato: ancora il placeholder del template. Configurare infisicalProjectId in projects.json."
+}
+
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -85,8 +95,6 @@ public static class WinCredManager
     }
 }
 "@
-
-# lascia qui invariata tutta la tua classe WinCredManager
 
 function Write-Section {
     param([string] $Title)
@@ -162,25 +170,54 @@ Assert-PathExists `
     -Path $SolutionPath `
     -Description "SolutionPath"
 
+# ---------------------------------------------------------------
+# Path output per i due file di segreti.
+#
+# Continue (.env): viene scritto in ~/.continue/.env perché è
+# uno dei tre path che il plugin Continue cerca automaticamente
+# (vedi https://docs.continue.dev/faqs — "Secret Resolution").
+# Le extension IDE di Continue NON leggono env vars di processo,
+# quindi serve necessariamente un file fisico in uno dei path
+# supportati. Si è scelto il path globale per utente per avere
+# un solo punto di configurazione comune a tutti i progetti.
+#
+# Aider: viene scritto in ~/.gargiolastech/ai-tooling/runtime/.
+# Aider riceve esplicitamente il path via `--env-file` dal
+# launcher Start-Aider.ps1, quindi non è vincolato a path
+# specifici. Il path runtime resta dentro l'area "effimera"
+# del tooling, separata dalla configurazione Continue.
+# ---------------------------------------------------------------
+
 $runtimeRoot = Join-Path `
     $env:USERPROFILE `
     ".gargiolastech\ai-tooling\runtime"
 
-if (-not (Test-Path $runtimeRoot)) {
+if (Test-Path $runtimeRoot) {
+    if (-not (Test-Path $runtimeRoot -PathType Container)) {
+        throw "Il path runtime esiste ma non è una directory: $runtimeRoot. Rimuoverlo manualmente e riprovare."
+    }
+} else {
     New-Item `
         -ItemType Directory `
         -Force `
         -Path $runtimeRoot | Out-Null
 }
 
-$continueEnvPath = Join-Path $runtimeRoot "continue.env"
-$aiderEnvPath = Join-Path $runtimeRoot "aider.env"
+$continueEnvDir = Join-Path $env:USERPROFILE ".continue"
 
-# lascia invariati:
-# - lettura Credential Manager
-# - login Infisical
-# - generazione continue.env
-# - generazione aider.env
+if (Test-Path $continueEnvDir) {
+    if (-not (Test-Path $continueEnvDir -PathType Container)) {
+        throw "Il path ~/.continue esiste ma non è una directory: $continueEnvDir. Rimuoverlo manualmente e riprovare."
+    }
+} else {
+    New-Item `
+        -ItemType Directory `
+        -Force `
+        -Path $continueEnvDir | Out-Null
+}
+
+$continueEnvPath = Join-Path $continueEnvDir ".env"
+$aiderEnvPath    = Join-Path $runtimeRoot "aider.env"
 
 $clientId = [WinCredManager]::ReadSecret("$CredentialScope-client-id")
 $clientSecret = [WinCredManager]::ReadSecret("$CredentialScope-client-secret")
@@ -226,50 +263,27 @@ Export-InfisicalEnvFile `
 Write-Host ""
 Write-Host "Continue env:"
 Write-Host $continueEnvPath
+Write-Host "  (letto automaticamente da Continue dal path globale ~/.continue/.env)"
 
 Write-Host ""
 Write-Host "Aider env:"
 Write-Host $aiderEnvPath
-
-function Import-DotEnvFile {
-    param([string] $Path)
-
-    if (-not (Test-Path $Path)) {
-        throw "Env file non trovato: $Path"
-    }
-
-    Get-Content $Path | ForEach-Object {
-
-        $line = $_.Trim()
-
-        if (
-            [string]::IsNullOrWhiteSpace($line) -or
-            $line.StartsWith("#")
-        ) {
-            return
-        }
-
-        $parts = $line -split "=", 2
-
-        if ($parts.Count -ne 2) {
-            return
-        }
-
-        $key = $parts[0].Trim()
-        $value = $parts[1].Trim()
-
-        [Environment]::SetEnvironmentVariable(
-            $key,
-            $value,
-            "Process"
-        )
-    }
-}
+Write-Host "  (passato esplicitamente ad aider.exe via --env-file dal launcher Start-Aider)"
 
 Write-Section "Avvio IDE"
 
-Import-DotEnvFile -Path $continueEnvPath
-Import-DotEnvFile -Path $aiderEnvPath
+# ---------------------------------------------------------------
+# Niente $env:CONTINUE_ENV_FILE: le IDE extensions di Continue
+# (VS Code, JetBrains) NON leggono env vars del processo. Il
+# file viene letto direttamente dal path ~/.continue/.env.
+#
+# $env:AIDER_ENV_FILE viene comunque settato come hint per
+# eventuali invocazioni dirette di aider.exe dal terminale
+# integrato dell'IDE (es. utenti che hanno script custom che
+# leggono questa variabile).
+# ---------------------------------------------------------------
+
+$env:AIDER_ENV_FILE = $aiderEnvPath
 
 $solutionFiles = @(
     Get-ChildItem `

@@ -5,7 +5,7 @@
   "infisicalProjectId": "REPLACE_WITH_INFISICAL_PROJECT_ID",
   "ides": {
     "rider": {
-      "path": "C:\\Users\\giuse\\AppData\\Local\\Programs\\Rider\\bin\\rider64.exe"
+      "path": "REPLACE_WITH_RIDER_PATH"
     },
     "visualstudio": {
       "path": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe"

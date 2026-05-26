@@ -1,21 +1,22 @@
 <#
 .SYNOPSIS
-Stores Infisical Machine Identity credentials in Windows Credential Manager.
+Archivia le credenziali Machine Identity di Infisical in Windows Credential Manager.
 
 .DESCRIPTION
-Writes two Generic credentials to Windows Credential Manager using cmdkey:
+Scrive due credenziali Generic in Windows Credential Manager tramite cmdkey:
 
-  <CredentialScope>-client-id     → holds the Machine Identity Client ID
-  <CredentialScope>-client-secret → holds the Machine Identity Client Secret
+  <CredentialScope>-client-id     → contiene il Machine Identity Client ID
+  <CredentialScope>-client-secret → contiene il Machine Identity Client Secret
 
-These targets are later read by Sync-InfisicalUserSecrets.ps1 via Win32 CredRead
-(advapi32.dll) without any external PowerShell module dependency.
+Queste credenziali vengono lette successivamente da Start-Ide-With-AiSecrets.ps1
+e Start-Aider.ps1 tramite Win32 CredRead (advapi32.dll), senza dipendenze
+da moduli PowerShell esterni.
 
-Run this script once per Machine Identity (or whenever credentials rotate).
+Eseguire una volta per macchina, o ad ogni rotazione delle credenziali.
 
 .PARAMETER CredentialScope
-Scope name used as the prefix for WCM target names.
-Must match the `credentialScope` value in infisical-sync.json.
+Prefisso usato come nome target in WCM.
+Deve corrispondere al valore `credentialScope` in projects.json.
 
 .PARAMETER ClientId
 Infisical Machine Identity Client ID.
@@ -24,24 +25,22 @@ Infisical Machine Identity Client ID.
 Infisical Machine Identity Client Secret.
 
 .EXAMPLE
-.\scripts\infisical\Set-InfisicalCredential.ps1 `
-    -CredentialScope mycompany-myapp-dev `
+.\scripts\windows\Set-InfisicalCredential.ps1 `
+    -CredentialScope gargiolastech-ai-tooling-dev `
     -ClientId  abc12345-0000-0000-0000-000000000000 `
     -ClientSecret s3cr3t-value-here
 
 .EXAMPLE
-# Per-project override (scope differs from root scope in infisical-sync.json)
-.\scripts\infisical\Set-InfisicalCredential.ps1 `
-    -CredentialScope mycompany-myapp-api-dev `
-    -ClientId  api-client-id `
-    -ClientSecret api-client-secret
+# Esecuzione tramite bootstrap wizard interattivo (raccomandato):
+.\scripts\windows\bootstrap-ai-tooling.cmd
 
 .NOTES
-Security note: cmdkey receives the secret via the /pass: argument, which is
-briefly visible in the Windows process list during execution. This is a known
-limitation of cmdkey. On a developer workstation this risk is acceptable.
+Nota di sicurezza: cmdkey riceve il segreto tramite l'argomento /pass:, che è
+brevemente visibile nella lista dei processi Windows durante l'esecuzione.
+Questa è una limitazione nota di cmdkey. Su una workstation developer il rischio
+è accettabile.
 
-Requires: Windows (cmdkey.exe is part of Windows since Vista).
+Richiede: Windows (cmdkey.exe è disponibile da Windows Vista in poi).
 #>
 param(
     [Parameter(Mandatory = $true)]
@@ -83,9 +82,10 @@ function Write-OK   { Write-Host '    OK' -ForegroundColor Green }
 function Write-Fail { param([string]$Msg) Write-Host "    FAIL: $Msg" -ForegroundColor Red }
 
 # ─── WCM write via cmdkey ─────────────────────────────────────────────────────
-# cmdkey stores the value in the CredentialBlob (password) field as UTF-16LE.
-# CredRead in Sync-InfisicalUserSecrets.ps1 reads this same blob back.
-# The /user: field is a fixed sentinel; only /pass: carries the actual secret.
+# cmdkey archivia il valore nel campo CredentialBlob come UTF-16LE.
+# Start-Ide-With-AiSecrets.ps1 e Start-Aider.ps1 leggono questo blob
+# tramite Win32 CredRead (advapi32.dll).
+# Il campo /user: è un sentinel fisso; solo /pass: porta il segreto reale.
 
 function Set-WcmEntry {
     param(

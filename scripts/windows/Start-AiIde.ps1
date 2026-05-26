@@ -66,9 +66,9 @@ function New-DefaultConfig {
     Write-Host ""
 
     Write-Host "Modifica:"
-    Write-Host "- solutionPath"
+    Write-Host "- ides.rider.path (path dell'eseguibile Rider)"
     Write-Host "- infisicalProjectId"
-    Write-Host "- riderPath"
+    Write-Host "- solutionPath di ciascun progetto"
     Write-Host ""
 
     Write-Host "Poi riesegui il launcher."
@@ -108,15 +108,16 @@ function Validate-LauncherConfig {
     }
 
     if ($null -eq $Config.ides) {
-    throw "Configurazione non valida: ides è obbligatorio."
+        throw "Configurazione non valida: ides è obbligatorio."
     }
 
     if ($null -eq $Config.projects -or $Config.projects.Count -eq 0) {
         throw "Configurazione non valida: projects deve contenere almeno un progetto."
     }
 
-    if ([string]::IsNullOrWhiteSpace($Config.infisicalProjectId) -or $Config.infisicalProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
-    throw "Configurazione non valida: infisicalProjectId root non valorizzato."
+    if ([string]::IsNullOrWhiteSpace($Config.infisicalProjectId) -or
+        $Config.infisicalProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
+        throw "Configurazione non valida: infisicalProjectId root non valorizzato."
     }
 
     foreach ($project in $Config.projects) {
@@ -161,17 +162,17 @@ function Select-Project {
     )
 
     if (-not [string]::IsNullOrWhiteSpace($RequestedKey)) {
-        $matches = @($Projects | Where-Object { $_.key -eq $RequestedKey })
+        $matchedProjects = @($Projects | Where-Object { $_.key -eq $RequestedKey })
 
-        if ($matches.Count -eq 0) {
+        if ($matchedProjects.Count -eq 0) {
             throw "Nessun progetto trovato con key '$RequestedKey'."
         }
 
-        if ($matches.Count -gt 1) {
+        if ($matchedProjects.Count -gt 1) {
             throw "Configurazione non valida: key duplicata '$RequestedKey'."
         }
 
-        return $matches[0]
+        return $matchedProjects[0]
     }
 
     while ($true) {
@@ -223,6 +224,10 @@ $idePath = $ideConfig.path
 
 if ([string]::IsNullOrWhiteSpace($idePath)) {
     throw "Path non configurato per IDE '$ideKey'."
+}
+
+if ($idePath -like "REPLACE_WITH_*") {
+    throw "IDE '$ideKey' ha un path placeholder non valorizzato. Modificare ides.$ideKey.path in projects.json."
 }
 
 if (-not (Test-Path $idePath)) {

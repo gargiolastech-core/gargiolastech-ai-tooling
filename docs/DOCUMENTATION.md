@@ -1,21 +1,34 @@
 # GargiolasTech AI Tooling — Documentazione Tecnica Enterprise
 
 > **Repository:** `gargiolastech-ai-tooling`
-> **Versione documento:** 2.1 — Aider installer integrato
+> **Versione documento:** 2.10 — Continue secret resolution corretta
 > **Audience:** Backend Developers · DevOps Engineers · Platform Engineers · Security Engineers
 > **Classificazione:** Documentazione architetturale e operativa di riferimento
 
-> ### Cosa è cambiato rispetto alla v2.0
-> - Aggiunti gli script `Install-Aider.cmd` e `Install-Aider.ps1` per il **provisioning automatizzato di Aider** in un virtualenv Python isolato (`~/.venvs/aider-env`).
-> - L'installazione di Aider entra ora ufficialmente nel flusso di setup standard: non è più un passo manuale demandato al developer.
-> - Documentate le decisioni di design: virtualenv isolato, Python launcher (`py -<version>`), idempotenza con `-ForceRecreate`.
+> ### Cosa è cambiato rispetto alla v2.9 (BREAKING)
+> - **Fix architetturale critico**: corretto il meccanismo di iniezione segreti per Continue. Le IDE extensions di Continue **non leggono** le variabili d'ambiente del processo IDE (limitazione documentata in [Continue FAQ](https://docs.continue.dev/faqs)); il vecchio meccanismo `$env:CONTINUE_ENV_FILE` era inefficace.
+> - Il file di segreti Continue viene ora scritto direttamente in `~/.continue/.env` (path di ricerca nativo di Continue).
+> - Il path `~/.gargiolastech/ai-tooling/runtime/continue.env` non viene più generato.
+> - `Import-DotEnvFile` rimossa da `Start-Ide-With-AiSecrets.ps1` (era origine di merge implicito tra namespace `/continue` e `/aider`).
+> - `$env:AIDER_ENV_FILE` mantenuto come hint per terminali integrati; Aider riceve comunque il path via `--env-file` esplicito.
+> - Aggiunti placeholder validation (`REPLACE_WITH_RIDER_PATH`, `REPLACE_WITH_INFISICAL_PROJECT_ID`) con fail-fast.
+> - Aggiunto `.gitignore` al repo centrale.
+
+> ### Cosa è cambiato rispetto alla v2.6
+> - `start-ai-ide.cmd` **eliminato** dal repo consumer: l'IDE si avvia dal collegamento desktop, non dipende dal repo corrente.
+> - Chiarito il criterio di selezione dei thin wrapper.
+
+> ### Cosa è cambiato rispetto alla v2.4
+> - `Start-Aider.ps1` riscritto: nessuna selezione progetto, Aider parte nella directory corrente.
+> - `Start-AiderHere.ps1/.cmd` eliminati (ridondanti).
+
+> ### Cosa è cambiato rispetto alla v2.1
+> - Multi-IDE support (`ides` dictionary in `projects.json`).
+> - `infisicalProjectId` spostato a root unico.
 
 > ### Cosa è cambiato rispetto alla v1.0
-> - Il launcher è ora **IDE-agnostic**: supporta JetBrains Rider, Visual Studio 2022 e qualsiasi altro IDE configurabile dichiarativamente.
-> - Gli script sono stati rinominati da `*-AiRider*` a `*-AiIde*`. L'engine `Start-Rider-With-AiSecrets.ps1` è ora `Start-Ide-With-AiSecrets.ps1`.
-> - Il file `projects.json` introduce la sezione `ides` (dizionario IDE-id → path eseguibile) e il campo `ide` per ogni progetto.
-> - Il collegamento desktop usa un'icona dedicata (`images/Icona.ico`) versionata in repo, anziché ereditarla dall'eseguibile dell'IDE.
-> - Nuova cartella `images/` contenente l'asset dell'icona del launcher.
+> - Launcher rinominati da `*-AiRider*` a `*-AiIde*`.
+> - Engine IDE-agnostic, icona dedicata in `images/`.
 
 ---
 
@@ -55,6 +68,8 @@
 32. [CI/CD considerations](#32-cicd-considerations)
 33. [Developer onboarding guide](#33-developer-onboarding-guide)
 34. [FAQ](#34-faq)
+35. [Distribuzione via Git Submodule](#35-distribuzione-via-git-submodule)
+36. [Modalità di utilizzo di Aider](#36-modalità-di-utilizzo-di-aider)
 
 ---
 
@@ -215,8 +230,8 @@ flowchart TB
     AIDER_ENV --> RUN_DIR
     CFG -->|"ide → path"| SCRIPTS
     SCRIPTS -->|"avvio IDE selezionato"| IDE
-    IDE -.->|"CONTINUE_ENV_FILE"| CONT
-    IDE -.->|"AIDER_ENV_FILE"| AIDER
+    IDE -.->|"legge da ~/.continue/.env"| CONT
+    IDE -.->|"AIDER_ENV_FILE / --env-file"| AIDER
 
     style L1 fill:#1b5e20,stroke:#fff,color:#fff
     style L2 fill:#827717,stroke:#fff,color:#fff
@@ -285,17 +300,17 @@ sequenceDiagram
         CLI->>INF: GET /api/v3/secrets/raw
         INF-->>CLI: Lista segreti
         CLI-->>Engine: Output dotenv
-        Engine->>FS: Append a continue.env
+        Engine->>FS: Append a ~/.continue/.env
     end
     loop Per ogni path /global, /aider
         Engine->>CLI: infisical export --path X --format dotenv
         CLI->>INF: GET /api/v3/secrets/raw
         INF-->>CLI: Lista segreti
         CLI-->>Engine: Output dotenv
-        Engine->>FS: Append a aider.env
+        Engine->>FS: Append a runtime/aider.env
     end
-    Engine->>Engine: Set $env:CONTINUE_ENV_FILE
-    Engine->>Engine: Set $env:AIDER_ENV_FILE
+    Engine->>Engine: Set $env:AIDER_ENV_FILE (hint per terminali)
+    Note over Engine: Niente $env:CONTINUE_ENV_FILE — Continue legge dal filesystem
     Engine->>FS: Get-ChildItem *.sln in SolutionPath
     Engine->>IDE: Start-Process IdePath con sln/path
     IDE-->>Dev: IDE pronto con AI tools configurati
@@ -675,7 +690,7 @@ Alternativa scartata: invece di esportare i segreti AI in file `.env`, potremmo 
 
 | Considerazione | File .env runtime | Segreti in WCM |
 |---|---|---|
-| Consumabilità da Continue/Aider | ✅ Continue legge `CONTINUE_ENV_FILE` nativamente | ❌ Richiederebbe wrapper personalizzati per ogni tool |
+| Consumabilità da Continue/Aider | ✅ Continue legge da `~/.continue/.env`; Aider riceve `--env-file` esplicito | ❌ Richiederebbe wrapper personalizzati per ogni tool |
 | Aggiornabilità (rotazione segreti AI) | ✅ Cancello e rigenero | ⚠️ Sync continuo necessario |
 | Numero di segreti supportati | Illimitato | Conveniente fino a ~10, oltre diventa scomodo |
 | Single source of truth | ✅ Infisical | ❌ WCM diventa cache che può divergere |
@@ -750,13 +765,18 @@ gargiolastech-ai-tooling/
 ├── scripts/
 │   └── windows/                     ← Tutti gli script PowerShell e CMD
 │       ├── bootstrap-ai-tooling.cmd
+│       ├── Add-AiToolingSubmodule.ps1
 │       ├── Install-AiIdeDesktopShortcut.ps1
 │       ├── Install-Aider.cmd
 │       ├── Install-Aider.ps1
+│       ├── Install-PowerShellProfile.ps1
 │       ├── Set-InfisicalCredential.ps1
 │       ├── Start-AiIde.cmd
 │       ├── Start-AiIde.ps1
-│       └── Start-Ide-With-AiSecrets.ps1
+│       ├── Start-Aider.cmd
+│       ├── Start-Aider.ps1
+│       ├── Start-Ide-With-AiSecrets.ps1
+│       └── Uninstall-PowerShellProfile.ps1
 └── templates/
     └── projects.json.template       ← Template configurazione multi-progetto / multi-IDE
 ```
@@ -771,11 +791,16 @@ gargiolastech-ai-tooling/
 | `images/Icona.ico` | Asset binario | Icona del collegamento desktop (formato `.ico` richiesto da Windows) | — | ❌ |
 | `images/Icona.png` | Asset binario | Versione PNG dell'icona per uso non-shortcut (es. documentazione, web) | — | ❌ |
 | `scripts/windows/bootstrap-ai-tooling.cmd` | Wrapper CMD | UX-friendly wrapper su `Set-InfisicalCredential.ps1` con scope predefinito | ✅ | ❌ (interattivo) |
+| `scripts/windows/Add-AiToolingSubmodule.ps1` | Setup submodule | Aggiunge questo repo come Git submodule in un repo consumer e crea il thin wrapper `start-aider.cmd` | ✅ | ❌ |
 | `scripts/windows/Set-InfisicalCredential.ps1` | Script core | Scrive Client ID + Client Secret in WCM tramite `cmdkey` | ✅ | ❌ (riceve secret come param) |
 | `scripts/windows/Install-Aider.cmd` | Wrapper CMD | Wrapper double-clickable per `Install-Aider.ps1`, propaga argomenti con `%*` | ✅ | ❌ |
 | `scripts/windows/Install-Aider.ps1` | Provisioner | Installa Aider in un virtualenv Python isolato (`~/.venvs/aider-env`); supporta `-PythonVersion`, `-VenvPath`, `-ForceRecreate` | ✅ | ❌ |
+| `scripts/windows/Install-PowerShellProfile.ps1` | Configuratore workstation | Aggiunge `aider-here` al `$PROFILE` PowerShell; idempotente via marcatore; attiva l'alias nella sessione corrente senza riavvio | ✅ | ❌ |
+| `scripts/windows/Uninstall-PowerShellProfile.ps1` | Configuratore workstation | Rimuove il blocco `aider-here` dal `$PROFILE` PowerShell tramite regex sul marcatore | ✅ | ❌ |
 | `scripts/windows/Start-AiIde.cmd` | Wrapper CMD | Lancia `Start-AiIde.ps1` bypassando ExecutionPolicy | ✅ | ❌ |
 | `scripts/windows/Start-AiIde.ps1` | Launcher | Multi-project / multi-IDE chooser, valida config, risolve IDE, delega a `Start-Ide-With-AiSecrets.ps1` | ✅ | ❌ |
+| `scripts/windows/Start-Aider.cmd` | Wrapper CMD | Lancia `Start-Aider.ps1` bypassando ExecutionPolicy | ✅ | ❌ |
+| `scripts/windows/Start-Aider.ps1` | Launcher one-shot | Legge solo i campi root di `projects.json`; WCM → Infisical → `aider.env` → avvio Aider **nella directory corrente** (bloccante, nessuna selezione progetto) | ✅ | ⚠️ (manipola segreti in-memory) |
 | `scripts/windows/Start-Ide-With-AiSecrets.ps1` | Engine | Cuore del runtime IDE-agnostic: WCM → Infisical login → export → spawn IDE | ✅ | ⚠️ (manipola segreti in-memory) |
 | `scripts/windows/Install-AiIdeDesktopShortcut.ps1` | Utility | Crea collegamento desktop "AI IDE Launcher" con icona da `images/Icona.ico` | ✅ | ❌ |
 | `templates/projects.json.template` | Template | Schema di configurazione multi-progetto e multi-IDE | — | ❌ |
@@ -796,6 +821,7 @@ gargiolastech-ai-tooling/
 flowchart TB
     subgraph LayerUX["Layer UX"]
         CMD["Start-AiIde.cmd"]
+        ACMD["Start-Aider.cmd"]
         SHORT["Install-AiIdeDesktopShortcut.ps1"]
     end
 
@@ -805,6 +831,7 @@ flowchart TB
 
     subgraph LayerEngine["Layer Engine"]
         ENG["Start-Ide-With-AiSecrets.ps1"]
+        AENG["(engine inline in Start-Aider.ps1)"]
     end
 
     subgraph LayerBootstrap["Layer Bootstrap (one-shot)"]
@@ -818,6 +845,7 @@ flowchart TB
     end
 
     CMD --> LAUNCH
+    ACMD --> AENG
     SHORT -.->|"installa collegamento a"| CMD
     LAUNCH --> ENG
     BOOT --> SETCRED
@@ -828,9 +856,10 @@ flowchart TB
 
 - **UX Layer**: si occupa solo di doppio-click ed exit code utenti-friendly.
 - **Orchestration Layer**: legge config, valida, sceglie il progetto, chiama l'engine.
-- **Engine Layer**: parlare con WCM, Infisical, filesystem runtime e lanciare Rider.
-- **Bootstrap Layer**: scritto una sola volta nella vita di una workstation; isolato per chiarezza operativa. Memorizza le credenziali Machine Identity in WCM.
-- **Provisioning Layer**: prepara le dipendenze runtime (Aider in virtualenv Python). Eseguito una volta per workstation; rieseguibile per upgrade.
+- **Engine Layer** — IDE: `Start-Ide-With-AiSecrets.ps1` in processo figlio (non bloccante per il dispatcher).
+- **Engine Layer** — Aider: logica WCM/Infisical **inline** in `Start-Aider.ps1`. Nessuna selezione progetto: Aider parte nella directory corrente del terminale. Bloccante per design.
+- **Bootstrap Layer**: eseguito una volta nella vita della workstation. Memorizza le credenziali Machine Identity in WCM.
+- **Provisioning Layer**: prepara le dipendenze runtime (Aider in virtualenv Python). Rieseguibile per upgrade.
 
 Vantaggi:
 
@@ -901,8 +930,9 @@ Vedi le sezioni dedicate:
 - **Sezione 13** — creazione e configurazione della Machine Identity.
 - **Sezione 14** — bootstrap delle credenziali tramite `bootstrap-ai-tooling.cmd`.
 - **Sezione 11.5** — installazione di Aider via `Install-Aider.cmd`.
-- **Sezione 11.6** — primo avvio del launcher e configurazione `projects.json`.
-- **Sezione 11.7** — installazione del collegamento desktop.
+- **Sezione 11.6** — installazione alias PowerShell `aider-here` via `Install-PowerShellProfile.ps1`.
+- **Sezione 11.7** — primo avvio del launcher e configurazione `projects.json`.
+- **Sezione 11.8** — installazione del collegamento desktop.
 
 ### 11.5 Installazione di Aider
 
@@ -960,7 +990,50 @@ Esempi:
 
 > Dettagli implementativi e razionale architetturale dell'installer Aider: vedi Sezione 20.6.
 
-### 11.6 Primo avvio del launcher
+### 11.6 Alias PowerShell `aider-here` (opzionale ma raccomandato)
+
+Per invocare `Start-Aider.cmd` da qualsiasi directory PowerShell digitando semplicemente `aider-here`:
+
+```powershell
+.\Install-PowerShellProfile.ps1
+```
+
+**Output atteso:**
+
+```
+============================================================
+ Verifica profilo PowerShell
+============================================================
+Profilo target: C:\Users\<utente>\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+Profilo esistente trovato.
+
+============================================================
+ Aggiornamento profilo
+============================================================
+Alias aggiunto con successo.
+
+  aider-here
+  C:\dev\gargiolastech-ai-tooling\scripts\windows\Start-Aider.cmd
+
+============================================================
+ Attivazione immediata
+============================================================
+Profilo ricaricato. 'aider-here' è disponibile in questa sessione.
+
+Da qualsiasi directory PowerShell:
+  cd C:\dev\mio-progetto
+  aider-here
+```
+
+L'alias è attivo **immediatamente** nella sessione corrente (`. $PROFILE` viene eseguito dallo script) e in tutte le sessioni future.
+
+**Rimozione** (se necessaria):
+
+```powershell
+.\Uninstall-PowerShellProfile.ps1
+```
+
+### 11.7 Primo avvio del launcher
 
 Dopo aver completato il bootstrap (Sezione 14) e l'installazione di Aider (Sezione 11.5), il primo avvio del launcher crea automaticamente lo scheletro di `projects.json`:
 
@@ -993,7 +1066,7 @@ Poi riesegui il launcher.
 
 Il file generato va personalizzato (Sezione 18). Dopo la modifica, il successivo lancio mostrerà la lista dei progetti disponibili.
 
-### 11.7 Installazione del collegamento desktop
+### 11.8 Installazione del collegamento desktop
 
 ```powershell
 .\Install-AiIdeDesktopShortcut.ps1
@@ -1556,10 +1629,10 @@ Comune: stessa identità tecnica, ma il progetto `quoteflow` usa env `dev` e `wc
 
 | File | Posizione | Scope | Versionato |
 |---|---|---|:---:|
-| `projects.json.template` | `<repo>/templates/` | Schema di riferimento | ✅ |
+| `projects.json.template` | `<repo>/templates/` | Schema di riferimento (include sezione `aider` root) | ✅ |
 | `projects.json` | `~/.gargiolastech/ai-tooling/` | Configurazione utente effettiva | ❌ |
-| `continue.env` | `~/.gargiolastech/ai-tooling/runtime/` | Segreti runtime Continue | ❌ |
-| `aider.env` | `~/.gargiolastech/ai-tooling/runtime/` | Segreti runtime Aider | ❌ |
+| `continue.env` (in realtà `.env`) | `~/.continue/` | Segreti runtime Continue (path letto nativamente da Continue) | ❌ |
+| `aider.env` | `~/.gargiolastech/ai-tooling/runtime/` | Segreti runtime Aider (generato sia da `Start-AiIde` che da `Start-Aider`) | ❌ |
 | Continue config (`config.json`) | `~/.continue/config.json` | Configurazione Continue (non sensibile) | ❌ (Continue gestisce in proprio) |
 | Aider config (`.aider.conf.yml`) | Per-progetto o utente | Configurazione Aider | ❌ |
 
@@ -1593,6 +1666,11 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
   "credentialScope": "string (required)",
   "environment": "string (required)",
   "infisicalHost": "string (required, URL)",
+  "infisicalProjectId": "string (required, root — condiviso da tutti i progetti)",
+  "aider": {
+    "executablePath": "string (optional — default: ~/.venvs/aider-env/Scripts/aider.exe)",
+    "model": "string (optional — default: anthropic/claude-sonnet-4-20250514)"
+  },
   "ides": {
     "<ide-key>": {
       "path": "string (required, absolute path to IDE executable)"
@@ -1603,21 +1681,21 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
       "key": "string (required, unique within array)",
       "name": "string (required, display name)",
       "ide": "string (required, must match a key in ides)",
-      "solutionPath": "string (required, absolute path to .sln directory)",
-      "infisicalProjectId": "string (required, NOT placeholder)"
+      "solutionPath": "string (required, absolute path to .sln directory)"
     }
   ]
 }
 ```
 
-### 18.2 Differenze rispetto alla v1.0
+### 18.2 Differenze rispetto alle versioni precedenti
 
-| Aspetto | v1.0 | v2.0 (corrente) |
-|---|---|---|
-| Path IDE | `riderPath` (root, singolo) | `ides` dictionary con N entry |
-| Selezione IDE per progetto | Implicita (sempre Rider) | Esplicita via campo `ide` del progetto |
-| Aggiungere un nuovo IDE | Modifica di codice nello script engine | Aggiungere entry in `ides`, nessuna modifica di codice |
-| Naming convention IDE | — | Convenzione: snake_case (`rider`, `visualstudio`, `vscode`, `cursor`) |
+| Aspetto | v1.0 | v2.0 | v2.2 (corrente) |
+|---|---|---|---|
+| Path IDE | `riderPath` (root, singolo) | `ides` dictionary con N entry | `ides` dictionary (invariato) |
+| Selezione IDE per progetto | Implicita (sempre Rider) | Esplicita via campo `ide` | Esplicita via campo `ide` (invariato) |
+| Project ID Infisical | Nei singoli `projects[]` | Nei singoli `projects[]` | **Root unico** `infisicalProjectId` |
+| Configurazione Aider | Assente | Assente | Sezione root `aider` (opzionale) |
+| Launcher Aider | Assente | Assente | `Start-Aider.cmd` / `Start-Aider.ps1` |
 
 ### 18.3 Documentazione campo per campo
 
@@ -1690,17 +1768,35 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
 
 #### `projects[].solutionPath` (string)
 
-- **Significato**: path assoluto alla directory che contiene il file `.sln` (o più `.sln` per soluzioni multi-progetto).
-- **Comportamento**:
-  - Se la directory contiene **un solo `.sln`**, l'engine apre direttamente quel file passandolo come argomento all'IDE.
-  - Se contiene **più `.sln`**, apre l'IDE sulla directory e l'utente seleziona la solution dall'IDE.
-- **Compatibilità multi-IDE**: il pattern di passaggio argomento (`<ide.exe> "<path>"`) è supportato sia da `rider64.exe` che da `devenv.exe` (Visual Studio). Per IDE che richiedono sintassi diversa serve un wrapper (vedi Sezione 29).
-- **Validazione**: lo script verifica esistenza tramite `Test-Path`.
+- **Significato**: path assoluto alla directory che contiene il file `.sln`.
+- **Comportamento per launcher IDE**: se c'è un solo `.sln` → apertura diretta; se più `.sln` → apertura directory.
+- **Comportamento per launcher Aider**: `Push-Location $solutionPath` prima di avviare Aider, garantendo che il Git working tree rilevato sia quello corretto.
+- **Validazione**: lo script verifica esistenza tramite `Test-Path` sia in `Start-AiIde.ps1` che in `Start-Aider.ps1`.
 
-#### `projects[].infisicalProjectId` (string)
+#### `infisicalProjectId` (string, root) — spostato in root dalla v2.2
 
-- **Significato**: ID univoco del progetto Infisical (formato UUID-like fornito da Infisical).
-- **Vincolo critico**: il valore `REPLACE_WITH_INFISICAL_PROJECT_ID` (default del template) causa fail-fast in validazione, prevenendo configurazioni incomplete.
+- **Significato**: ID univoco del progetto Infisical (formato UUID-like fornito da Infisical). Dalla v2.2 è un campo **root unico** condiviso da tutti i progetti nel file.
+- **Motivazione**: tutti i progetti in `projects.json` condividono lo stesso progetto Infisical (che contiene i segreti AI). La distinzione è a livello di IDE e `solutionPath`, non di identità Infisical.
+- **Vincolo critico**: il valore `REPLACE_WITH_INFISICAL_PROJECT_ID` causa fail-fast in validazione.
+- **Dove trovarlo**: Infisical web UI → Project → Settings → Project ID.
+
+#### `aider` (object, root, opzionale) — NUOVO IN v2.2
+
+Configurazione globale per il launcher `Start-Aider.ps1`. La sezione è **completamente opzionale**: se assente o se i campi sono vuoti, vengono applicati i default del launcher.
+
+```json
+"aider": {
+  "executablePath": "",
+  "model": "anthropic/claude-sonnet-4-20250514"
+}
+```
+
+| Campo | Default | Significato |
+|---|---|---|
+| `executablePath` | `%USERPROFILE%\.venvs\aider-env\Scripts\aider.exe` | Path assoluto all'eseguibile Aider. Stringa vuota o assente → usa il default del virtualenv creato da `Install-Aider.ps1`. |
+| `model` | `anthropic/claude-sonnet-4-20250514` | Modello AI passato ad Aider con `--model`. Qualsiasi modello supportato da Aider è valido (es. `gpt-4o`, `anthropic/claude-opus-4-20250514`, `ollama/llama3`). |
+
+**Regola di priorità**: se `executablePath` è stringa vuota (`""`), il launcher usa il default. Se è valorizzato, viene validato che il path esista prima di avviare il flusso Infisical.
 
 ### 18.4 Esempio completo di `projects.json` configurato
 
@@ -1709,6 +1805,11 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
   "credentialScope": "gargiolastech-ai-tooling-dev",
   "environment": "dev",
   "infisicalHost": "https://app.infisical.com",
+  "infisicalProjectId": "abcd1234-ef56-7890-1234-567890abcdef",
+  "aider": {
+    "executablePath": "",
+    "model": "anthropic/claude-sonnet-4-20250514"
+  },
   "ides": {
     "rider": {
       "path": "C:\\Program Files\\JetBrains\\JetBrains Rider 2025.1\\bin\\rider64.exe"
@@ -1722,26 +1823,25 @@ Tutti gli artefatti runtime e di configurazione utente vivono sotto:
       "key": "wcm",
       "name": "GargiolasTech DevEx WCM",
       "ide": "rider",
-      "solutionPath": "C:\\dev\\gargiolastech-devex-wcm",
-      "infisicalProjectId": "abcd1234-ef56-7890-1234-567890abcdef"
+      "solutionPath": "C:\\dev\\gargiolastech-devex-wcm"
     },
     {
       "key": "quoteflow",
       "name": "QuoteFlow",
       "ide": "rider",
-      "solutionPath": "C:\\dev\\quoteflow",
-      "infisicalProjectId": "fedc4321-ba98-7654-3210-fedcba987654"
+      "solutionPath": "C:\\dev\\quoteflow"
     },
     {
       "key": "legacy-wpf",
       "name": "Legacy WPF App",
       "ide": "visualstudio",
-      "solutionPath": "C:\\dev\\legacy-wpf",
-      "infisicalProjectId": "11223344-5566-7788-99aa-bbccddeeff00"
+      "solutionPath": "C:\\dev\\legacy-wpf"
     }
   ]
 }
 ```
+
+> **Nota**: `aider.executablePath` lasciato vuoto (`""`) → il launcher usa il default `~/.venvs/aider-env/Scripts/aider.exe`. Per usare un eseguibile custom (es. installazione globale) valorizzare il campo con il path assoluto.
 
 ### 18.5 Validazione lato CI (futuro)
 
@@ -1806,18 +1906,39 @@ Una validazione runtime aggiuntiva — non esprimibile in JSON Schema standard �
 
 ### 19.2 Modalità di consumo delle variabili d'ambiente
 
-Continue legge variabili d'ambiente attraverso **due meccanismi**:
+Continue (plugin IDE per VS Code e JetBrains) legge i segreti referenziati con la sintassi `${{ secrets.NAME }}` nel `config.yaml` da **path filesystem ben definiti**, **non** dalle variabili d'ambiente del processo IDE.
 
-1. **Direttamente dall'ambiente di processo**: variabili `$env:OPENAI_API_KEY` ereditate dal processo padre (l'IDE — Rider, Visual Studio con estensione Continue, …).
-2. **Da un file `.env` puntato da `CONTINUE_ENV_FILE`**: meccanismo che adottiamo.
+Ordine di ricerca di Continue ([docs ufficiali](https://docs.continue.dev/faqs)):
 
-Lo script engine imposta:
+1. `<workspace-root>/.env`
+2. `<workspace-root>/.continue/.env`
+3. `~/.continue/.env`  ← **path adottato da questo sistema**
+4. Process environment variables (**solo per Continue CLI**, non per le IDE extensions)
+
+**Punto critico**: le IDE extensions di Continue (VS Code, JetBrains) **non leggono** le environment variables del processo IDE. Settare `$env:OPENAI_API_KEY` o `$env:CONTINUE_ENV_FILE` prima di lanciare l'IDE è inutile per Continue dentro l'IDE.
+
+**Soluzione adottata**: lo script engine scrive il file di segreti direttamente in `~/.continue/.env` ad ogni avvio dell'IDE:
 
 ```powershell
-$env:CONTINUE_ENV_FILE = $continueEnvPath
+$continueEnvDir  = Join-Path $env:USERPROFILE ".continue"
+$continueEnvPath = Join-Path $continueEnvDir ".env"
+
+# Generazione fresca ad ogni avvio (sovrascrive il precedente)
+Export-InfisicalEnvFile -Paths @("/global","/continue") -OutputPath $continueEnvPath
 ```
 
-Prima di avviare l'IDE, in modo che Continue (caricato come plugin dell'IDE — Rider, Visual Studio o altro) erediti la variabile e legga il file.
+Continue, quando l'IDE viene avviato, trova il file in uno dei suoi path di ricerca standard e risolve correttamente i `${{ secrets.NAME }}`.
+
+#### Trade-off del path globale `~/.continue/.env`
+
+| Aspetto | Implicazione |
+|---|---|
+| Una configurazione comune | Tutti i progetti che aprono Continue vedono le stesse chiavi |
+| File sovrascritto ad ogni avvio | L'ultimo `Start-AiIde` vince — se si lavora su due progetti con chiavi diverse, l'ultimo apre con le proprie |
+| Path nel profilo utente | Sicurezza: il file è coperto dal DACL del profilo Windows (accessibile solo all'utente corrente) |
+| Sopravvive alla chiusura dell'IDE | A differenza degli env vars di processo, il file resta su disco — vale come "trust on first write" |
+
+Per scenari multi-progetto con chiavi diverse simultanee, una variante più isolata sarebbe scrivere in `<workspace>/.continue/.env`, accettando il vincolo di aggiungere `.continue/.env` al `.gitignore` di ogni repo consumer. Vedi Sezione 29 per discussione estesa.
 
 ### 19.3 Esempio di `continue.env` generato
 
@@ -2089,6 +2210,148 @@ Remove-Item -Recurse -Force "$HOME\.venvs\aider-env"
 ```
 
 Nessun residuo nel registry, nessun PATH cleanup necessario.
+
+### 20.9 Launcher `Start-Aider.ps1` — avvio Aider nella directory corrente
+
+#### Caso d'uso
+
+Il developer apre un terminale **in qualsiasi directory** — un nuovo progetto da scrivere da zero, una repo non configurata in `projects.json`, una sotto-cartella di un monorepo — e vuole avviare Aider lì immediatamente.
+
+```powershell
+cd C:\dev\qualsiasi-progetto
+Start-Aider.cmd
+# → Aider parte qui, senza selezionare nulla
+```
+
+#### Cosa fa
+
+Legge solo i **campi root** di `projects.json` (credenziali Infisical, modello Aider). La sezione `projects[]` e `ides` vengono ignorate. Zero interazione: nessuna lista, nessuna selezione.
+
+#### Flusso completo
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Term as Terminale (cwd = dir corrente)
+    participant PS1 as Start-Aider.ps1
+    participant CFG as projects.json (soli campi root)
+    participant WCM as Windows Credential Manager
+    participant CLI as Infisical CLI
+    participant INF as Infisical Server
+    participant FS as Runtime FS
+    participant Aider as aider.exe
+
+    Dev->>Term: cd C:\dev\qualsiasi-progetto
+    Dev->>Term: Start-Aider.cmd
+    Term->>PS1: powershell -File Start-Aider.ps1
+    PS1->>PS1: Cattura (Get-Location).Path
+    PS1->>PS1: Warning se .git non trovato (non bloccante)
+    PS1->>CFG: Read-GlobalConfig (solo campi root)
+    PS1->>PS1: Validate-GlobalConfig
+    PS1->>PS1: Resolve-AiderExecutable / Resolve-AiderModel
+    PS1->>WCM: CredRead(scope-client-id)
+    WCM-->>PS1: ClientId
+    PS1->>WCM: CredRead(scope-client-secret)
+    WCM-->>PS1: ClientSecret
+    PS1->>CLI: infisical login --method universal-auth
+    CLI->>INF: POST /api/v1/auth/universal-auth/login
+    INF-->>CLI: Short-lived JWT
+    PS1->>CLI: infisical export /global + /aider
+    INF-->>CLI: segreti
+    PS1->>FS: Scrive aider.env in runtime/
+    PS1->>Aider: & aider.exe --model X --env-file aider.env
+    Note over PS1,Aider: Bloccante nella cwd corrente
+    Aider-->>PS1: exit (utente digita /exit)
+    PS1-->>Dev: Terminale restituito
+```
+
+#### Confronto con `Start-AiIde.ps1`
+
+| Aspetto | `Start-AiIde.ps1` | `Start-Aider.ps1` |
+|---|---|---|
+| Selezione progetto | Lista interattiva da `projects[]` | **Nessuna** |
+| Working directory | `solutionPath` del progetto scelto | **Directory corrente** |
+| Cosa legge da `projects.json` | Tutti i campi | **Solo campi root** |
+| Engine | Delega a `Start-Ide-With-AiSecrets.ps1` (processo figlio) | Engine **inline** (stesso processo) |
+| Comportamento terminale | Non bloccante | **Bloccante** fino a `/exit` |
+| Segreti generati | `continue.env` + `aider.env` | Solo `aider.env` |
+
+#### Warning Git — perché non bloccante
+
+Aider funziona meglio dalla root di un repository Git. Il warning giallo è informativo e non impedisce l'avvio: ci sono casi legittimi senza `.git` (nuovo progetto prima del `git init`, cartella di lavoro temporanea).
+
+#### Parametri
+
+```powershell
+# Invocazione standard (usa ~/.gargiolastech/ai-tooling/projects.json)
+.\Start-Aider.cmd
+
+# Config alternativa
+.\Start-Aider.ps1 -ConfigPath "$HOME\.gargiolastech\ai-tooling\projects.staging.json"
+```
+
+### 20.10 Alias PowerShell `aider-here` — installazione nel `$PROFILE`
+
+#### Problema risolto
+
+`Start-Aider.cmd` richiede di conoscere il path completo dello script o di trovarsi già nella cartella `scripts/windows`. Per invocarlo da **qualsiasi directory** in PowerShell con un comando breve, si installa una funzione nel `$PROFILE` utente.
+
+#### Cosa è il `$PROFILE` PowerShell
+
+`$PROFILE` è una variabile automatica che punta al file di script eseguito automaticamente ad ogni avvio di una nuova sessione PowerShell. Percorso tipico:
+
+```
+C:\Users\<utente>\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
+```
+
+Aggiungere una funzione lì equivale a renderla disponibile globalmente, come un alias di shell in bash/zsh.
+
+#### Cosa installa `Install-PowerShellProfile.ps1`
+
+Il blocco iniettato nel `$PROFILE` è marcato con un commento identificativo per permettere l'idempotenza e la rimozione:
+
+```powershell
+# [gargiolastech-ai-tooling] aider-here BEGIN
+function aider-here {
+    & "C:\dev\gargiolastech-ai-tooling\scripts\windows\Start-Aider.cmd"
+}
+# [gargiolastech-ai-tooling] aider-here END
+```
+
+Il path di `Start-Aider.cmd` è **risolto staticamente** al momento dell'installazione (relativo a `$PSScriptRoot`). Se il repository viene spostato, va rieseguito `Install-PowerShellProfile.ps1` per aggiornare il path.
+
+#### Idempotenza
+
+Lo script cerca il marcatore `# [gargiolastech-ai-tooling] aider-here` nel `$PROFILE` prima di scrivere. Se è già presente non aggiunge nulla. Rieseguire `Install-PowerShellProfile.ps1` è sicuro.
+
+#### Attivazione immediata
+
+Alla fine dell'installazione lo script esegue `. $PROFILE` (dot-sourcing), che ricarica il profilo nella sessione corrente. L'alias è disponibile **senza riavviare il terminale**.
+
+#### `Uninstall-PowerShellProfile.ps1`
+
+Rimuove il blocco tramite regex multilinea che individua `BEGIN` → `END` del marcatore. Utile in caso di cambio path del repository o cleanup workstation.
+
+```powershell
+# Installazione
+.\Install-PowerShellProfile.ps1
+
+# Verifica immediata
+aider-here  # Deve avviarsi nella directory corrente
+
+# Rimozione
+.\Uninstall-PowerShellProfile.ps1
+```
+
+#### Nota su ExecutionPolicy
+
+`Install-PowerShellProfile.ps1` modifica un file `.ps1` (`$PROFILE`). Se la policy della macchina è `Restricted`, il profilo non viene eseguito all'avvio di PowerShell anche dopo l'installazione. Verificare e impostare almeno `RemoteSigned` per l'utente corrente:
+
+```powershell
+Get-ExecutionPolicy -List
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+```
 
 ---
 
@@ -2537,6 +2800,12 @@ E lanciare con `-Verbose`:
 | `Failed to install aider-chat.` (Install-Aider) | Stessa diagnosi di sopra; oppure dipendenza nativa che fallisce build | Verificare log pip; su Windows 10 vecchi può servire C++ Build Tools per alcune dipendenze |
 | `Aider executable not found after installation` (Install-Aider) | Virtualenv corrotto o creazione fallita silenziosamente | Rilanciare con `-ForceRecreate` |
 | `Aider verification failed.` (Install-Aider) | Aider installato ma `--version` fallisce | Investigare log; spesso correlato a versione Python non supportata da Aider (vedi release notes Aider) |
+| `Eseguibile Aider non trovato: <path>` (Start-Aider) | `Install-Aider.cmd` non eseguito, o `aider.executablePath` in `projects.json` punta a path errato | Eseguire `Install-Aider.cmd` oppure correggere `aider.executablePath` in `projects.json` |
+| `solutionPath non trovato per '<key>'` (Start-Aider) | `solutionPath` in `projects.json` non esiste su disco | Correggere il path o eseguire il clone della repo mancante |
+| `File di configurazione non trovato` (Start-Aider) | `projects.json` non esiste — bootstrap non ancora eseguito | Eseguire `Start-AiIde.cmd` una volta per generare `projects.json` dal template, poi configurare i 4 campi root |
+| Aider si avvia ma non vede il repository Git (Start-Aider) | `solutionPath` non è la root del Git repo | Verificare che `solutionPath` sia la directory che contiene `.git/` |
+| Aider si avvia ma non vede il repository Git (Start-Aider) | La cwd al momento dell'invocazione non è la root del repo | Spostarsi nella root del repo prima di invocare `Start-Aider.cmd`; lo script emette un warning giallo se `.git` non è trovato |
+| Aider si avvia ma ignora le chiavi API | `aider.env` generato ma non passato correttamente | Verificare contenuto di `~/.gargiolastech/ai-tooling/runtime/aider.env`; deve contenere `OPENAI_API_KEY` o `ANTHROPIC_API_KEY` |
 
 ### 26.2 Esempi di sessione di troubleshooting
 
@@ -2626,12 +2895,11 @@ Aprire `~/.gargiolastech/ai-tooling/projects.json` e aggiungere un elemento all'
   "key": "payments",
   "name": "Payments Gateway",
   "ide": "rider",
-  "solutionPath": "C:\\dev\\payments-gateway",
-  "infisicalProjectId": "11223344-5566-7788-99aa-bbccddeeff00"
+  "solutionPath": "C:\\dev\\payments-gateway"
 }
 ```
 
-> **Nota multi-IDE**: il campo `ide` è obbligatorio dalla v2.0. Il valore deve corrispondere a una chiave esistente nella sezione `ides` di `projects.json`. Se l'IDE che si vuole usare non è ancora configurato, aggiungerlo prima nella sezione `ides` (Sezione 18).
+> **Nota**: dalla v2.2 non è più necessario il campo `infisicalProjectId` per-progetto. Il Project ID è configurato una sola volta come campo root in `projects.json`.
 
 #### Step 3 — Validazione
 
@@ -2930,6 +3198,54 @@ function Find-IdeInstallation {
 
 Da invocare al primo avvio per popolare automaticamente `ides[<type>].path`.
 
+### 29.10 Estensione: Modulo `AiSecrets.psm1` condiviso (refactoring engine)
+
+**Contesto**: `Start-Aider.ps1` e `Start-Ide-With-AiSecrets.ps1` condividono la stessa logica WCM/Infisical, duplicata intenzionalmente in v2.2 per non modificare l'engine esistente.
+
+**Approccio di refactoring**:
+
+Estrarre le funzioni comuni in un modulo PowerShell `AiSecrets.psm1`:
+
+```powershell
+# AiSecrets.psm1
+function Initialize-AiSecretEnvironment {
+    param(
+        [string] $ProjectId,
+        [string] $Environment,
+        [string] $CredentialScope,
+        [string] $InfisicalHost
+    )
+    # 1. Legge WCM (Add-Type WinCredManager — unica definizione)
+    # 2. Login Infisical
+    # 3. Crea runtime dir
+    # 4. Ritorna @{ AiderEnvPath = ...; ContinueEnvPath = ... }
+}
+
+function Export-InfisicalEnvFile { ... }
+
+Export-ModuleMember -Function Initialize-AiSecretEnvironment, Export-InfisicalEnvFile
+```
+
+I due consumer diventano:
+
+```powershell
+# In Start-Ide-With-AiSecrets.ps1
+Import-Module "$PSScriptRoot\AiSecrets.psm1"
+$envFiles = Initialize-AiSecretEnvironment @params
+Start-Process -FilePath $IdePath ...
+
+# In Start-Aider.ps1
+Import-Module "$PSScriptRoot\AiSecrets.psm1"
+$envFiles = Initialize-AiSecretEnvironment @params
+Push-Location $SolutionPath
+& $AiderExe --env-file $envFiles.AiderEnvPath ...
+Pop-Location
+```
+
+**Benefici**: zero duplicazione, Add-Type `WinCredManager` definito una sola volta, test unitari sul modulo.
+
+**Prerequisito**: rilascio v3.0 (breaking change per gli script esistenti che fanno dot-sourcing implicito).
+
 ---
 
 ## 30. Folder structure raccomandata
@@ -3214,9 +3530,11 @@ Per un nuovo developer:
 - [ ] **Step 5** — Developer clona il repo `gargiolastech-ai-tooling`.
 - [ ] **Step 6** — Developer esegue `bootstrap-ai-tooling.cmd` e inserisce le credenziali.
 - [ ] **Step 7** — Developer esegue `Install-Aider.cmd` per provisioning del virtualenv Aider.
-- [ ] **Step 8** — Developer esegue `Start-AiIde.cmd` (primo avvio crea config).
+- [ ] **Step 8** — Developer esegue `Install-PowerShellProfile.ps1` per installare l'alias `aider-here` nel `$PROFILE` PowerShell.
+- [ ] **Step 9** — Developer esegue `Start-AiIde.cmd` (primo avvio crea config).
 - [ ] **Step 9** — Developer edita `projects.json` con i propri progetti.
 - [ ] **Step 10** — Developer esegue di nuovo `Start-AiIde.cmd` e verifica che l'IDE selezionato per il progetto si apra con Continue funzionante.
+- [ ] **Step 10b** *(opzionale)* — Developer esegue `Start-Aider.cmd` e verifica che Aider si avvii nel terminale con i segreti AI iniettati.
 - [ ] **Step 11** — Developer esegue `Install-AiIdeDesktopShortcut.ps1` per shortcut sul desktop.
 - [ ] **Step 12** — Developer firma documento di acknowledgment delle security best practices.
 
@@ -3248,7 +3566,10 @@ if (-not (Test-Path $repoDir)) {
 # 3. Provisioning Aider (virtualenv isolato)
 & "$scriptDir\Install-Aider.ps1"
 
-# 4. Trigger primo avvio (genera projects.json)
+# 4. Alias PowerShell aider-here
+& "$scriptDir\Install-PowerShellProfile.ps1"
+
+# 5. Trigger primo avvio (genera projects.json)
 & "$scriptDir\Start-AiIde.ps1"
 
 # 5. Installa shortcut
@@ -3449,6 +3770,217 @@ Detto questo, **la documentazione ufficiale e gli alias suggeriti (Sezione 20.8)
 
 **A**: Nulla. Il venv è completamente isolato: il `python.exe` del venv usa il suo proprio site-packages e ignora del tutto il global site-packages. Le due installazioni coesistono senza conflitti. È sicuro disinstallare la versione globale (`pip uninstall aider-chat` nel Python di sistema) dopo aver verificato che il venv funziona.
 
+### Q21: `Start-Aider.cmd` richiede comunque `projects.json`?
+
+**A**: Sì, ma **solo per i 4 campi root**: `credentialScope`, `environment`, `infisicalHost`, `infisicalProjectId`. Questi servono per autenticarsi su Infisical e recuperare i segreti AI. La sezione `projects[]` e `ides` vengono lette ma completamente ignorate. Se non hai ancora `projects.json`, esegui `Start-AiIde.cmd` una volta: creerà il file dal template.
+
+### Q22: Qual è la differenza tra `Start-AiIde.cmd` e `Start-Aider.cmd`?
+
+**A**: Complementari, non alternativi:
+
+| | `Start-AiIde.cmd` | `Start-Aider.cmd` |
+|---|---|---|
+| Scopo | Apre l'IDE con AI configurato | Avvia Aider nella directory corrente |
+| Selezione progetto | Sì — lista da `projects[]` | No — zero interazione |
+| Working directory | `solutionPath` del progetto scelto | Directory corrente del terminale |
+| Cosa genera | `continue.env` + `aider.env` | Solo `aider.env` |
+| Processo risultante | IDE (non bloccante) | Aider nel terminale (bloccante) |
+
+**Workflow tipico combinato**: `Start-AiIde.cmd` per aprire l'IDE con Continue, poi dal terminale integrato dell'IDE `Start-Aider.cmd` (o alias `aider-here`) per sessioni Aider sulla stessa directory.
+
+---
+
+## 36. Modalità di utilizzo di Aider
+
+Questa sezione raccoglie in un unico punto di riferimento tutte le modalità con cui è possibile avviare e usare Aider dopo aver completato il setup descritto nelle sezioni precedenti. Ogni modalità copre un caso d'uso specifico e produce lo stesso risultato in termini di sicurezza: segreti sempre iniettati a runtime da Infisical, mai persistiti.
+
+### 36.1 Prerequisiti comuni a tutte le modalità
+
+Prima di poter usare Aider con qualsiasi modalità, i seguenti passi devono essere stati completati **una volta per macchina**:
+
+| Step | Script | Verifica |
+|---|---|---|
+| Credenziali Infisical in WCM | `bootstrap-ai-tooling.cmd` | `cmdkey /list:gargiolastech-ai-tooling-dev-client-id` |
+| Virtualenv Aider installato | `Install-Aider.cmd` | `& "$HOME\.venvs\aider-env\Scripts\aider.exe" --version` |
+| Alias PowerShell (opzionale) | `Install-PowerShellProfile.ps1` | Aprire PowerShell → digitare `aider-here` |
+
+---
+
+### 36.2 Modalità 1 — Da repo consumer (submodule)
+
+**Caso d'uso**: il repo su cui stai lavorando ha già il submodule configurato. È il flusso standard per i progetti aziendali.
+
+**Prerequisito aggiuntivo**: submodule inizializzato.
+
+```cmd
+git submodule update --init --recursive
+```
+
+**Avvio**:
+
+```cmd
+cd C:\dev\quoteflow
+Start-Aider.cmd
+```
+
+**Cosa succede**:
+
+```mermaid
+flowchart LR
+    W["Start-Aider.cmd\n(root consumer)"] -->|"call"| S["gargiolastech-ai-tooling/\nscripts/windows/Start-Aider.cmd"]
+    S --> PS["Start-Aider.ps1"]
+    PS --> INF["WCM → Infisical → aider.env"]
+    INF --> A["aider.exe\nnella cwd corrente"]
+```
+
+**Caratteristiche**:
+- Zero configurazione aggiuntiva per il developer.
+- Il thin wrapper verifica che il submodule sia inizializzato e mostra un messaggio chiaro se non lo è.
+- Funziona da qualsiasi posizione nel filesystem perché `%~dp0` risolve il path relativo alla posizione del `.cmd`.
+
+---
+
+### 36.3 Modalità 2 — Da qualsiasi directory (launcher diretto)
+
+**Caso d'uso**: stai lavorando su un progetto che **non ha** il submodule, su una cartella temporanea, su un nuovo progetto da zero, o semplicemente vuoi Aider lì dove sei senza configurazione previa.
+
+**Avvio** (da qualsiasi terminale PowerShell o CMD):
+
+```cmd
+cd C:\dev\nuovo-progetto-da-zero
+C:\dev\gargiolastech-ai-tooling\scripts\windows\Start-Aider.cmd
+```
+
+Oppure, se preferisci invocare direttamente lo script PowerShell:
+
+```powershell
+cd C:\dev\nuovo-progetto-da-zero
+powershell -ExecutionPolicy Bypass -File `
+    C:\dev\gargiolastech-ai-tooling\scripts\windows\Start-Aider.ps1
+```
+
+**Caratteristiche**:
+- Nessun submodule richiesto nel repo corrente.
+- Nessuna selezione di progetto — Aider parte immediatamente nella directory corrente.
+- Warning non bloccante se la directory non contiene `.git`.
+
+---
+
+### 36.4 Modalità 3 — Alias PowerShell `aider-here` (più veloce)
+
+**Caso d'uso**: identico alla Modalità 2, ma invocabile con un comando breve da qualsiasi sessione PowerShell grazie all'alias installato nel `$PROFILE`.
+
+**Prerequisito aggiuntivo**: `Install-PowerShellProfile.ps1` eseguito almeno una volta (permanente, non richiede ripetizione dopo riavvio).
+
+**Avvio**:
+
+```powershell
+cd C:\dev\qualsiasi-progetto
+aider-here
+```
+
+**Caratteristiche**:
+- Comando più breve e mnemonico.
+- Disponibile in ogni nuova sessione PowerShell automaticamente (il `$PROFILE` viene caricato ad ogni apertura).
+- Funziona su qualsiasi directory senza submodule.
+- Sotto il cofano invoca `Start-Aider.cmd` nel repo centrale tramite path assoluto risolto al momento dell'installazione.
+
+**Ciclo di vita dell'alias**:
+
+```mermaid
+flowchart TB
+    INSTALL["Install-PowerShellProfile.ps1\n(una volta sola)"]
+    PROFILE["$PROFILE\n~/.../Microsoft.PowerShell_profile.ps1"]
+    SESSION["Ogni nuova sessione PowerShell"]
+    ALIAS["function aider-here { ... }\ndisponibile ovunque"]
+
+    INSTALL -->|"scrive"| PROFILE
+    SESSION -->|"carica automaticamente"| PROFILE
+    PROFILE -->|"definisce"| ALIAS
+```
+
+---
+
+### 36.5 Modalità 4 — Dal terminale integrato dell'IDE
+
+**Caso d'uso**: hai già aperto l'IDE con `Start-AiIde.cmd` e vuoi una sessione Aider **sullo stesso progetto** senza aprire un terminale esterno.
+
+**Avvio** (dal terminale integrato di Rider o Visual Studio):
+
+```powershell
+# Sei già nella solutionPath del progetto aperto nell'IDE
+aider-here
+
+# Oppure, se l'alias non è installato:
+& "C:\dev\gargiolastech-ai-tooling\scripts\windows\Start-Aider.cmd"
+```
+
+**Caratteristiche**:
+- La working directory del terminale integrato è già la root del progetto → Aider vede il repo Git corretto senza alcun `cd`.
+- I segreti vengono rigenerati da Infisical (nuova chiamata): se nel frattempo le chiavi AI sono state ruotate, questa sessione Aider usa le chiavi aggiornate.
+- Il terminale integrato rimane occupato da Aider fino a `/exit`; per continuare a usare l'IDE durante la sessione Aider aprire un secondo pannello terminale.
+
+---
+
+### 36.6 Confronto sintetico delle modalità
+
+| Modalità | Comando | Submodule richiesto | Alias richiesto | Caso d'uso ideale |
+|---|---|:---:|:---:|---|
+| **1 — Consumer repo** | `Start-Aider.cmd` dalla root del repo | ✅ | ❌ | Progetto aziendale con submodule |
+| **2 — Launcher diretto** | Path completo a `Start-Aider.cmd` | ❌ | ❌ | Qualsiasi directory, nessuna configurazione |
+| **3 — Alias `aider-here`** | `aider-here` | ❌ | ✅ | Uso quotidiano veloce da PowerShell |
+| **4 — Terminale IDE** | `aider-here` o path completo | ❌ | Consigliato | Sessione Aider contestuale al progetto aperto |
+
+---
+
+### 36.7 Cosa succede in tutte le modalità (pipeline comune)
+
+Indipendentemente dalla modalità scelta, il flusso interno è sempre identico:
+
+```mermaid
+flowchart TB
+    ANY["Qualsiasi modalità di avvio"] --> PS["Start-Aider.ps1"]
+
+    subgraph Pipeline["Pipeline comune (sempre uguale)"]
+        R["Legge projects.json\n(solo campi root)"]
+        W["WCM → ClientId + ClientSecret"]
+        L["Login Infisical\n(JWT short-lived)"]
+        E["Export /global + /aider\n→ aider.env runtime"]
+        A["& aider.exe\n--model X\n--env-file aider.env\nnella cwd corrente"]
+    end
+
+    PS --> R --> W --> L --> E --> A
+```
+
+**Implicazioni pratiche**:
+
+- I segreti sono sempre freschi: ogni avvio di Aider ottiene un nuovo JWT e ri-esporta i segreti da Infisical. Se le chiavi AI sono state ruotate, la prossima sessione le vede automaticamente.
+- `aider.env` viene sovrascritto ad ogni avvio: nessuna sessione porta con sé segreti di sessioni precedenti.
+- Se Infisical non è raggiungibile (rete assente), il launcher fallisce con un messaggio chiaro prima di avviare Aider.
+
+---
+
+### 36.8 Scelta della modalità — albero decisionale
+
+```mermaid
+flowchart TB
+    Q1{"Il repo corrente ha\nil submodule?"}
+    Q2{"Vuoi il comando\npiù breve possibile?"}
+    Q3{"Hai già l'IDE aperto\ncon Start-AiIde?"}
+
+    M1["Modalità 1\nStart-Aider.cmd\ndalla root del repo"]
+    M3["Modalità 3\naider-here\n(alias PowerShell)"]
+    M4["Modalità 4\naider-here dal\nterminale integrato IDE"]
+    M2["Modalità 2\nPath completo a\nStart-Aider.cmd"]
+
+    Q1 -->|"Sì"| M1
+    Q1 -->|"No"| Q3
+    Q3 -->|"Sì"| M4
+    Q3 -->|"No"| Q2
+    Q2 -->|"Sì, alias installato"| M3
+    Q2 -->|"No"| M2
+```
+
 ---
 
 ## Conclusione
@@ -3460,9 +3992,10 @@ Questa documentazione descrive un'architettura **runtime-first, zero-trust, IDE-
 3. **Ogni avvio è una fresh injection**: ciò che vale è quanto è in Infisical *in questo momento*, non quanto era ieri.
 4. **L'IDE è un dettaglio di configurazione, non di codice**: l'engine non conosce Rider o Visual Studio, riceve un path eseguibile e una solution. Aggiungere un nuovo IDE è una modifica dichiarativa al JSON.
 
-A questi si aggiunge un quinto principio operativo introdotto in v2.1:
+A questi si aggiungono due principi operativi introdotti nelle versioni successive:
 
 5. **Le dipendenze runtime sono isolate**: Aider vive in un virtualenv dedicato per non contaminare l'ambiente Python di sistema, ed è installabile/aggiornabile/disinstallabile in modo atomico.
+6. **Il launcher Aider è senza frizioni**: nessuna selezione, nessuna configurazione progetto — `Start-Aider.cmd` da qualsiasi directory, stessa sicurezza degli altri launcher.
 
 La soluzione è **deliberatamente semplice**: poche centinaia di righe di PowerShell + un singolo file JSON. La semplicità è una feature di sicurezza: il codice è ispezionabile in un'oretta, non ci sono dipendenze opache, ogni decisione è giustificabile in termini di trade-off espliciti.
 
@@ -3472,6 +4005,358 @@ L'estendibilità è **per design**: cross-platform, multi-IDE (già abilitato in
 
 ---
 
-**Versione documento:** 2.1 — Aider installer integrato
-**Ultima revisione:** 23 maggio 2026
+**Versione documento:** 2.9 — Sezione 36 modalità di utilizzo Aider
+**Ultima revisione:** 26 maggio 2026
 **Manutentori:** Platform Engineering Team — GargiolasTech
+
+---
+
+## 35. Distribuzione via Git Submodule
+
+### 35.1 Problema risolto
+
+Senza una strategia di distribuzione centralizzata, ogni repository applicativo che vuole usare il launcher AI deve:
+
+- copiare manualmente gli script (drift inevitabile tra repo);
+- o re-implementare la logica (violazione DRY);
+- o documentare che "gli script vanno cercati altrove" (onboarding degradato).
+
+Il modello **Git submodule** risolve il problema dichiarativamente: il repo centrale è versionato una sola volta, i repo consumer lo referenziano a uno specifico commit, l'aggiornamento è un'operazione Git esplicita e tracciata.
+
+### 35.2 Architettura
+
+```mermaid
+flowchart TB
+    subgraph Central["Repo centrale (GitHub)"]
+        AITOOLS["gargiolastech-ai-tooling"]
+        SCRIPTS["scripts/windows/*.ps1 *.cmd"]
+        TEMPLATES["templates/projects.json.template"]
+    end
+
+    subgraph ConsumerA["Repo consumer — quoteflow"]
+        SUBA["gargiolastech-ai-tooling/ (submodule @commitX)"]
+        WA1["start-aider.cmd (thin wrapper)"]
+    end
+
+    subgraph ConsumerB["Repo consumer — wcm"]
+        SUBB["gargiolastech-ai-tooling/ (submodule @commitX)"]
+        WB1["start-aider.cmd (thin wrapper)"]
+    end
+
+    subgraph WorkstationFS["Workstation developer"]
+        GLOBALCFG["~/.gargiolastech/ai-tooling/projects.json"]
+        RUNTIME["~/.gargiolastech/ai-tooling/runtime/*.env"]
+    end
+
+    AITOOLS --> SCRIPTS
+    AITOOLS --> TEMPLATES
+    AITOOLS -->|"submodule ref"| SUBA
+    AITOOLS -->|"submodule ref"| SUBB
+    WA1 -->|"call"| SUBA
+    WB1 -->|"call"| SUBB
+    SUBA -.->|"legge"| GLOBALCFG
+    SUBB -.->|"legge"| GLOBALCFG
+
+    style Central fill:#0d47a1,stroke:#fff,color:#fff
+    style WorkstationFS fill:#1b5e20,stroke:#fff,color:#fff
+```
+
+**Punti chiave**:
+
+- Il repo centrale contiene **tutta la logica**. I repo consumer contengono solo un thin wrapper `start-aider.cmd` e un puntatore al submodule.
+- **Criterio di selezione dei thin wrapper**: va nel repo consumer solo ciò che **dipende dal contesto del repo corrente** (la working directory). `start-aider.cmd` ha senso nel repo consumer perché Aider deve girare nella root di quel repo specifico. `start-ai-ide.cmd` **non** ha senso nel repo consumer perché l'IDE si avvia dal collegamento desktop — non dipende da quale repo si trova.
+- La configurazione `projects.json` vive **esclusivamente** nella workstation (`~/.gargiolastech/ai-tooling/`). Non è nei repo consumer, non è nel repo centrale.
+- Ogni repo consumer può pinnare il submodule a commit diversi. L'aggiornamento è una scelta esplicita, non automatica.
+
+### 35.3 Struttura del repo consumer dopo il setup
+
+```
+quoteflow/                              ← root del repo consumer
+├── .gitmodules                         ← registra il submodule
+├── gargiolastech-ai-tooling/           ← submodule (cartella gestita da Git)
+│   ├── .git                            ← file (non cartella) — punta a ../.git/modules/
+│   └── scripts/windows/*.ps1 *.cmd    ← script del repo centrale
+├── bootstrap-ai-tooling.cmd           ← thin wrapper onboarding (committato)
+├── Install-Aider.cmd                  ← thin wrapper onboarding (committato)
+├── Start-Aider.cmd                    ← thin wrapper uso quotidiano (committato)
+└── src/                               ← codice del progetto
+```
+
+**Contenuto di `.gitmodules`** (generato automaticamente da `git submodule add`):
+
+```ini
+[submodule "gargiolastech-ai-tooling"]
+    path = gargiolastech-ai-tooling
+    url = https://github.com/gargiolastech/gargiolastech-ai-tooling.git
+    branch = main
+```
+
+### 35.4 Criterio di selezione dei thin wrapper
+
+Il repo consumer include un thin wrapper quando lo script risponde **sì** ad almeno uno di questi criteri:
+
+1. **Dipende dalla working directory**: deve girare nella root di *questo* repo specifico.
+2. **È un onboarding step del progetto**: un developer che clona questo repo deve poterlo eseguire senza dover sapere dove si trova il repo centrale.
+
+| Script | Criterio 1 (cwd) | Criterio 2 (onboarding) | Nel consumer |
+|---|:---:|:---:|:---:|
+| `Start-Aider.cmd` | ✅ Aider deve girare in questa root | — | ✅ |
+| `bootstrap-ai-tooling.cmd` | — | ✅ Credenziali WCM al primo clone | ✅ |
+| `Install-Aider.cmd` | — | ✅ Virtualenv Aider al primo clone | ✅ |
+| `Start-AiIde.cmd` | ❌ L'IDE si apre dal desktop | ❌ Non è onboarding del progetto | ❌ |
+| `Install-PowerShellProfile.ps1` | ❌ | ❌ Setup globale di macchina | ❌ |
+| `Install-AiIdeDesktopShortcut.ps1` | ❌ | ❌ Setup globale di macchina | ❌ |
+
+**Regola pratica per futuri script**: se un nuovo tool AI ha senso invocarlo dalla root di un repo specifico o nell'onboarding di un progetto, aggiungere il suo thin wrapper qui. Altrimenti rimane nel repo centrale.
+
+### 35.5 Anatomia dei thin wrapper
+
+I tre thin wrapper nel repo consumer seguono tutti lo stesso pattern. Differiscono solo nel nome dello script target e nel commento descrittivo. Esempio con `Start-Aider.cmd`:
+
+```cmd
+@echo off
+setlocal
+
+:: Avvia Aider nella directory corrente con segreti Infisical iniettati.
+:: Uso quotidiano — eseguire dalla root del repo.
+
+set "REPO_ROOT=%~dp0"
+set "SUBMODULE_SCRIPT=%REPO_ROOT%gargiolastech-ai-tooling\scripts\windows\Start-Aider.cmd"
+
+if not exist "%SUBMODULE_SCRIPT%" (
+    echo.
+    echo ERRORE: submodule non inizializzato.
+    echo Eseguire: git submodule update --init --recursive
+    echo.
+    pause
+    exit /b 1
+)
+
+call "%SUBMODULE_SCRIPT%" %*
+
+endlocal
+```
+
+Gli altri due wrapper (`bootstrap-ai-tooling.cmd`, `Install-Aider.cmd`) sono identici nella struttura, con il path del submodule aggiornato allo script target corrispondente.
+
+**Decisioni di design comuni a tutti i wrapper**:
+
+| Scelta | Razionale |
+|---|---|
+| `%~dp0` per il path | Funziona da qualsiasi directory — il path è relativo alla posizione del `.cmd`, non alla cwd |
+| Check su `%SUBMODULE_SCRIPT%` | Rileva submodule non inizializzato e mostra il comando corretto invece di un errore criptico |
+| `call` invece di esecuzione diretta | Mantiene il flusso nel processo CMD corrente; senza `call`, il padre terminerebbe dopo il figlio |
+| `%*` | Propaga tutti gli argomenti al launcher centrale (es. `-ConfigPath`) |
+| Encoding ANSI (CP1252) | `cmd.exe` interpreta i `.cmd` in ANSI; UTF-8 causa artefatti nei messaggi di errore |
+
+### 35.6 Setup di un nuovo repo consumer
+
+#### Prerequisito
+
+Il repo centrale deve essere già su GitHub. Il developer deve avere accesso al repo centrale.
+
+#### Procedura
+
+**Opzione A — Script automatico** (raccomandato):
+
+```powershell
+# Dalla root del repo consumer
+cd C:\dev\quoteflow
+
+# Scarica e lancia Add-AiToolingSubmodule.ps1 dal repo centrale
+# (solo la prima volta — poi lo script esiste nel submodule installato)
+$url = "https://raw.githubusercontent.com/gargiolastech/gargiolastech-ai-tooling/main/scripts/windows/Add-AiToolingSubmodule.ps1"
+Invoke-WebRequest -Uri $url -OutFile "Add-AiToolingSubmodule.ps1"
+
+powershell -ExecutionPolicy Bypass -File .\Add-AiToolingSubmodule.ps1
+
+Remove-Item .\Add-AiToolingSubmodule.ps1
+```
+
+Lo script crea automaticamente i tre thin wrapper e li aggiunge all'index Git.
+
+**Opzione B — Manuale**:
+
+```powershell
+cd C:\dev\quoteflow
+
+# 1. Aggiunge il submodule
+git submodule add --branch main `
+    https://github.com/gargiolastech/gargiolastech-ai-tooling.git `
+    gargiolastech-ai-tooling
+git submodule update --init
+
+# 2. Copia i thin wrapper dal submodule
+$src = "gargiolastech-ai-tooling\templates\consumer-wrappers\"
+Copy-Item "${src}Start-Aider.cmd"            .\Start-Aider.cmd
+Copy-Item "${src}bootstrap-ai-tooling.cmd"   .\bootstrap-ai-tooling.cmd
+Copy-Item "${src}Install-Aider.cmd"          .\Install-Aider.cmd
+
+# 3. Commit
+git add .gitmodules gargiolastech-ai-tooling `
+    Start-Aider.cmd bootstrap-ai-tooling.cmd Install-Aider.cmd
+git commit -m "chore: add gargiolastech-ai-tooling submodule"
+```
+
+> **Nota**: i thin wrapper devono essere presenti anche in `templates/consumer-wrappers/` del repo centrale per supportare l'Opzione B. Vedi Sezione 35.11.
+
+### 35.7 Onboarding developer su repo consumer esistente
+
+Quando un developer clona un repo consumer che ha già il submodule configurato:
+
+```powershell
+# Clone con inizializzazione submodule in un solo comando
+git clone --recurse-submodules https://github.com/org/quoteflow.git
+cd quoteflow
+
+# Oppure, se già clonato senza --recurse-submodules:
+git submodule update --init
+```
+
+Dopo l'inizializzazione, il workflow di onboarding completo è tutto nella root del repo consumer:
+
+```cmd
+:: Step 1 — Credenziali Infisical in Windows Credential Manager
+bootstrap-ai-tooling.cmd
+
+:: Step 2 — Virtualenv Aider
+Install-Aider.cmd
+
+:: Step 3 — Uso quotidiano
+Start-Aider.cmd
+```
+
+**Nessuno script esterno da scaricare, nessun path manuale da ricordare.** Tutto è nella root del repo che il developer ha già clonato.
+
+### 35.8 Sequence diagram: flusso completo da repo consumer
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Dev as Developer
+    participant Wrapper as Start-Aider.cmd (repo consumer root)
+    participant Sub as gargiolastech-ai-tooling/scripts/windows/Start-Aider.cmd
+    participant PS1 as Start-Aider.ps1
+    participant CFG as ~/.gargiolastech/ai-tooling/projects.json
+    participant WCM as Windows Credential Manager
+    participant INF as Infisical
+
+    Dev->>Wrapper: Start-Aider.cmd (dalla root del repo)
+    Wrapper->>Wrapper: Verifica esistenza script nel submodule
+    alt Submodule non inizializzato
+        Wrapper-->>Dev: ERRORE — git submodule update --init --recursive
+    end
+    Wrapper->>Sub: call Start-Aider.cmd
+    Sub->>PS1: powershell -File Start-Aider.ps1
+    PS1->>CFG: Read-GlobalConfig (solo campi root)
+    PS1->>WCM: Legge Client ID + Secret
+    PS1->>INF: Login + export aider.env
+    PS1->>PS1: Avvia Aider nella cwd corrente (root del consumer)
+```
+
+### 35.9 Aggiornamento del submodule
+
+#### Aggiornare un singolo repo consumer
+
+```powershell
+cd C:\dev\quoteflow
+
+# Porta il submodule all'ultimo commit del branch main del repo centrale
+git submodule update --remote gargiolastech-ai-tooling
+
+# Verifica cosa è cambiato
+git diff gargiolastech-ai-tooling
+
+# Committa il bump di versione
+git add gargiolastech-ai-tooling
+git commit -m "chore: update ai-tooling submodule to latest"
+```
+
+#### Aggiornare tutti i repo consumer sulla workstation
+
+```powershell
+# Cerca tutti i repo con il submodule e aggiorna
+Get-ChildItem C:\dev -Directory | ForEach-Object {
+    $subPath = Join-Path $_.FullName "gargiolastech-ai-tooling"
+    if (Test-Path $subPath) {
+        Write-Host "Aggiornamento: $($_.Name)"
+        Push-Location $_.FullName
+        git submodule update --remote gargiolastech-ai-tooling
+        git add gargiolastech-ai-tooling
+        git commit -m "chore: update ai-tooling submodule" --allow-empty-message
+        Pop-Location
+    }
+}
+```
+
+#### Pinnare il submodule a un tag specifico
+
+Per ambienti enterprise dove si vuole controllare esattamente quale versione del repo centrale è in uso:
+
+```powershell
+cd C:\dev\quoteflow\gargiolastech-ai-tooling
+git checkout v2.6.0          # tag del repo centrale
+
+cd ..
+git add gargiolastech-ai-tooling
+git commit -m "chore: pin ai-tooling submodule to v2.6.0"
+```
+
+### 35.10 Aggiornamenti al repo centrale
+
+Quando viene modificato qualcosa nel repo centrale (nuovo script, fix, nuova sezione `projects.json`), **i repo consumer non si aggiornano automaticamente**. Il submodule è pinnato a un commit specifico. L'aggiornamento è sempre **opt-in** tramite `git submodule update --remote` + commit.
+
+Questo è il comportamento corretto per ambienti enterprise: nessun cambio implicito, ogni aggiornamento è tracciato nella storia Git del repo consumer.
+
+**Strategia consigliata per il repo centrale**:
+
+1. Usare **semantic versioning** su tag Git (`v2.5.0`, `v2.6.0`).
+2. Mantenere un `CHANGELOG.md` nel repo centrale.
+3. Comunicare breaking changes via release notes GitHub.
+4. I repo consumer aggiornano in modo coordinato durante sprint di manutenzione.
+
+### 35.11 Struttura consigliata del repo centrale per supportare i consumer
+
+Aggiungere al repo centrale una cartella `templates/consumer-wrappers/` con i thin wrapper pronti da copiare (supporta il setup manuale, Opzione B della Sezione 35.6):
+
+```
+gargiolastech-ai-tooling/
+├── scripts/windows/
+│   ├── Add-AiToolingSubmodule.ps1        ← script di setup automatico
+│   └── ...
+└── templates/
+    ├── projects.json.template
+    └── consumer-wrappers/                ← thin wrapper pronti da copiare
+        ├── Start-Aider.cmd               ← uso quotidiano
+        ├── bootstrap-ai-tooling.cmd      ← onboarding credenziali
+        └── Install-Aider.cmd             ← onboarding tool AI
+```
+
+In questo modo il setup manuale funziona senza `Invoke-WebRequest` o script esterni: il developer copia i tre file dalla cartella del submodule appena clonato.
+
+> Quando in futuro si aggiungono nuovi tool repo-aware o nuovi step di onboarding, si aggiunge il relativo thin wrapper in questa cartella e si aggiorna `Add-AiToolingSubmodule.ps1` per includerlo automaticamente.
+
+### 35.12 `.gitignore` per i repo consumer
+
+Aggiungere al `.gitignore` del repo consumer solo la cartella runtime (generata localmente dalla workstation):
+
+```gitignore
+# AI tooling — runtime files (generati localmente, mai committare)
+gargiolastech-ai-tooling/runtime/
+
+# Non ignorare il submodule stesso:
+# gargiolastech-ai-tooling/  ← NON aggiungere questa riga
+```
+
+> **Attenzione**: non aggiungere `gargiolastech-ai-tooling/` al `.gitignore` del repo consumer. Il submodule deve essere tracciato da Git. Solo i file runtime dentro la cartella vanno ignorati.
+
+### 35.13 Troubleshooting submodule
+
+| Sintomo | Causa | Soluzione |
+|---|---|---|
+| `ERRORE: submodule non inizializzato` dal thin wrapper | Clone senza `--recurse-submodules` | `git submodule update --init` nella root del repo consumer |
+| `gargiolastech-ai-tooling/` vuota | Come sopra | Come sopra |
+| `fatal: repository not found` durante `submodule add` | URL errato o accesso negato | Verificare URL e permessi GitHub |
+| Submodule in stato `(modified content)` | File modificati dentro il submodule | `cd gargiolastech-ai-tooling && git checkout .` per ripristinare |
+| Submodule in stato detached HEAD | Normale dopo `git submodule update` | Usare `git submodule update --remote` per portarlo all'ultimo commit del branch |
+| Thin wrapper non trova `Start-Aider.cmd` | Submodule inizializzato ma script rinominato in versione nuova | `git submodule update --remote` per allineare alla versione corrente |
