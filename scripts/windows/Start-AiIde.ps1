@@ -57,23 +57,27 @@ function New-DefaultConfig {
 
     Write-Section "Configurazione creata"
 
-    Write-Host "È stato creato il file:"
-    Write-Host $Path
+    Write-Host "E' stato creato il file di configurazione:"
+    Write-Host "  $Path"
+    Write-Host ""
+    Write-Host "Il file si apre ora in Notepad."
+    Write-Host "Valorizza i campi obbligatori, salva, poi chiudi Notepad"
+    Write-Host "e premi INVIO per continuare con il launcher."
+    Write-Host ""
+    Write-Host "Campi da compilare:"
+    Write-Host "  - infisicalProjectId   : UUID del progetto Infisical"
+    Write-Host "  - ides.rider.path      : path assoluto di rider64.exe"
+    Write-Host "  - solutionPath         : path della cartella del tuo progetto"
     Write-Host ""
 
-    Write-Host "Template utilizzato:"
-    Write-Host $templatePath
-    Write-Host ""
+    # Apre il file in Notepad (non bloccante - Notepad gira in background)
+    Start-Process -FilePath "notepad.exe" -ArgumentList "`"$Path`""
 
-    Write-Host "Modifica:"
-    Write-Host "- ides.rider.path (path dell'eseguibile Rider)"
-    Write-Host "- infisicalProjectId"
-    Write-Host "- solutionPath di ciascun progetto"
-    Write-Host ""
+    Read-Host "Premi INVIO quando hai salvato e chiuso Notepad per continuare"
 
-    Write-Host "Poi riesegui il launcher."
-
-    exit 0
+    # Ricarica la config appena modificata - se ancora invalida
+    # la validazione successiva mostrera' l'errore specifico.
+    return
 }
 
 function Read-LauncherConfig {
@@ -81,6 +85,11 @@ function Read-LauncherConfig {
 
     if (-not (Test-Path $Path)) {
         New-DefaultConfig -Path $Path
+    }
+
+    # Rilegge dopo l'eventuale creazione/modifica in Notepad
+    if (-not (Test-Path $Path)) {
+        throw "File di configurazione non trovato dopo la creazione: $Path"
     }
 
     try {
@@ -96,19 +105,19 @@ function Validate-LauncherConfig {
     param($Config)
 
     if ([string]::IsNullOrWhiteSpace($Config.credentialScope)) {
-        throw "Configurazione non valida: credentialScope è obbligatorio."
+        throw "Configurazione non valida: credentialScope e' obbligatorio."
     }
 
     if ([string]::IsNullOrWhiteSpace($Config.environment)) {
-        throw "Configurazione non valida: environment è obbligatorio."
+        throw "Configurazione non valida: environment e' obbligatorio."
     }
 
     if ([string]::IsNullOrWhiteSpace($Config.infisicalHost)) {
-        throw "Configurazione non valida: infisicalHost è obbligatorio."
+        throw "Configurazione non valida: infisicalHost e' obbligatorio."
     }
 
     if ($null -eq $Config.ides) {
-        throw "Configurazione non valida: ides è obbligatorio."
+        throw "Configurazione non valida: ides e' obbligatorio."
     }
 
     if ($null -eq $Config.projects -or $Config.projects.Count -eq 0) {
@@ -214,7 +223,9 @@ if ([string]::IsNullOrWhiteSpace($ideKey)) {
     throw "Il progetto '$($selected.key)' non ha il campo ide valorizzato."
 }
 
-$ideConfig = $Config.ides.$ideKey
+$ideConfig = $Config.ides.PSObject.Properties |
+    Where-Object { $_.Name -eq $ideKey } |
+    Select-Object -ExpandProperty Value -ErrorAction SilentlyContinue
 
 if ($null -eq $ideConfig) {
     throw "IDE '$ideKey' non configurato nella sezione ides."

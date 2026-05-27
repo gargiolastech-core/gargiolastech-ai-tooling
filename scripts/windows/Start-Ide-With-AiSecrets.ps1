@@ -334,7 +334,7 @@ else {
     $targetPath = $SolutionPath
 
     Write-Host ""
-    Write-Host "Trovate più solution. Apertura directory per selezione IDE:"
+    Write-Host "Trovate piu' solution. Apertura directory per selezione IDE:"
     foreach ($solution in $solutionFiles) {
         Write-Host "- $($solution.Name)"
     }
