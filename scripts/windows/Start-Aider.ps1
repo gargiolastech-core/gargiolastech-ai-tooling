@@ -112,15 +112,15 @@ function Validate-GlobalConfig {
     param($Config)
 
     if ([string]::IsNullOrWhiteSpace($Config.credentialScope)) {
-        throw "Configurazione non valida: credentialScope è obbligatorio."
+        throw "Configurazione non valida: credentialScope e' obbligatorio."
     }
 
     if ([string]::IsNullOrWhiteSpace($Config.environment)) {
-        throw "Configurazione non valida: environment è obbligatorio."
+        throw "Configurazione non valida: environment e' obbligatorio."
     }
 
     if ([string]::IsNullOrWhiteSpace($Config.infisicalHost)) {
-        throw "Configurazione non valida: infisicalHost è obbligatorio."
+        throw "Configurazione non valida: infisicalHost e' obbligatorio."
     }
 
     if ([string]::IsNullOrWhiteSpace($Config.infisicalProjectId) -or
@@ -129,16 +129,50 @@ function Validate-GlobalConfig {
     }
 }
 
+function Get-ConfigProperty {
+    # Legge una proprieta' nidificata da un oggetto PSCustomObject
+    # in modo compatibile con Set-StrictMode -Version Latest.
+    # Restituisce $null se la proprieta' non esiste invece di lanciare errore.
+    param(
+        $Object,
+        [string] $Property
+    )
+
+    if ($null -eq $Object) { return $null }
+
+    $props = $Object.PSObject.Properties
+    $match = $props | Where-Object { $_.Name -eq $Property }
+
+    if ($null -eq $match) { return $null }
+    return $match.Value
+}
+
 function Resolve-AiderExecutable {
     param($Config)
 
     $default = Join-Path $env:USERPROFILE ".venvs\aider-env\Scripts\aider.exe"
 
-    $exe = if ($Config.aider -and
-               -not [string]::IsNullOrWhiteSpace($Config.aider.executablePath)) {
-        $Config.aider.executablePath
-    } else {
-        $default
+    $aiderSection = Get-ConfigProperty -Object $Config -Property 'aider'
+    $exe          = Get-ConfigProperty -Object $aiderSection -Property 'executable'
+
+    # Fallback a executablePath (schema legacy)
+    if ([string]::IsNullOrWhiteSpace($exe)) {
+        $exe = Get-ConfigProperty -Object $aiderSection -Property 'executablePath'
+    }
+
+    # Se il path contiene un placeholder non valorizzato (<utente>,
+    # REPLACE_WITH_*, ecc.) trattarlo come assente e usare il default.
+    if (-not [string]::IsNullOrWhiteSpace($exe)) {
+        if ($exe -match '<[^>]+>' -or $exe -like 'REPLACE_WITH_*') {
+            Write-Host "AVVISO: aider.executable contiene un placeholder non valorizzato." `
+                -ForegroundColor Yellow
+            Write-Host "  Usato default: $default" -ForegroundColor Yellow
+            $exe = $null
+        }
+    }
+
+    if ([string]::IsNullOrWhiteSpace($exe)) {
+        $exe = $default
     }
 
     if (-not (Test-Path $exe)) {
@@ -154,14 +188,15 @@ function Resolve-AiderExecutable {
 function Resolve-AiderModel {
     param($Config)
 
-    $default = "anthropic/claude-sonnet-4-20250514"
+    $default      = "anthropic/claude-sonnet-4-20250514"
+    $aiderSection = Get-ConfigProperty -Object $Config -Property 'aider'
+    $model        = Get-ConfigProperty -Object $aiderSection -Property 'model'
 
-    if ($Config.aider -and
-        -not [string]::IsNullOrWhiteSpace($Config.aider.model)) {
-        return $Config.aider.model
+    if ([string]::IsNullOrWhiteSpace($model)) {
+        return $default
     }
 
-    return $default
+    return $model
 }
 
 # ---------------------------------------------------------------
@@ -207,7 +242,32 @@ $workingDir = (Get-Location).Path
 Write-Section "Aider"
 Write-Host "Directory corrente: $workingDir"
 
-# Warning non bloccante se non è la root di un repository Git
+# ---------------------------------------------------------------
+# Blocco di sicurezza: impedisce l'esecuzione se la working
+# directory e' una cartella di sistema Windows.
+# Succede quando il terminale e' aperto senza una directory
+# di partenza esplicita (es. collegamento desktop senza cwd).
+# ---------------------------------------------------------------
+
+$systemRoots = @(
+    [System.Environment]::GetFolderPath('System'),
+    [System.Environment]::GetFolderPath('Windows'),
+    [System.Environment]::GetFolderPath('ProgramFiles'),
+    [System.Environment]::GetFolderPath('ProgramFilesX86')
+)
+
+foreach ($sysRoot in $systemRoots) {
+    if (-not [string]::IsNullOrWhiteSpace($sysRoot) -and
+        $workingDir.StartsWith($sysRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw (
+            "Directory corrente non valida: $workingDir`n" +
+            "Spostarsi nella root del progetto prima di invocare aider-here.`n" +
+            "Esempio: cd C:\dev\mio-progetto"
+        )
+    }
+}
+
+# Warning non bloccante se non e' la root di un repository Git
 if (-not (Test-Path (Join-Path $workingDir ".git"))) {
     Write-Host ""
     Write-Host "ATTENZIONE: la directory corrente non contiene una root Git." `

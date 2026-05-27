@@ -3,6 +3,11 @@
   "environment": "dev",
   "infisicalHost": "https://infisical.gargiolastech.com",
   "infisicalProjectId": "REPLACE_WITH_INFISICAL_PROJECT_ID",
+  "aider": {
+    "venvPath": "C:\\Users\\<utente>\\.venvs\\aider-env",
+    "executable": "C:\\Users\\<utente>\\.venvs\\aider-env\\Scripts\\aider.exe",
+    "model": "backend-coder"
+  },
   "ides": {
     "rider": {
       "path": "REPLACE_WITH_RIDER_PATH"
