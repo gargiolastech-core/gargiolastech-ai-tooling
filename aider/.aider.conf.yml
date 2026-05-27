@@ -1,21 +1,46 @@
-model: openai/backend-coder
-
-openai-api-base: ${LLM_API_URL}
-openai-api-key: ${LLM_API_KEY}
+#
+# CREDENTIALS
+# openai-api-base e openai-api-key NON vanno qui.
+# Vengono settate come variabili di processo da Start-Aider.ps1
+# prima del lancio, lette da aider.env generato da Infisical.
+# Metterle nel YAML causa espansione mancata (${LLM_API_URL}
+# viene trattato come stringa letterale, non come variabile).
+#
 
 #
-# SECONDARY MODELS
+# MODELS
+# Allineati ai modelli definiti in continue/config.yaml.
+#
+# model (principale): pianifica le modifiche in architect mode,
+#   o esegue direttamente in modalita' standard.
+#   Corrisponde al modello "Architect" di Continue (ruolo: chat).
+#
+# editor-model: esegue materialmente gli edit nel formato diff.
+#   Corrisponde a "Backend Coder" di Continue (ruoli: edit, apply).
+#
+# weak-model: commit messages e riassunti della chat history.
+#   Corrisponde a "Fast Coder" di Continue (ruolo: summarize).
+#
+# Altri modelli disponibili in Continue ma senza ruolo diretto in Aider:
+#   openai/principal-architect  -> sessioni di design avanzato (usa --model al volo)
+#   openai/web-research         -> ricerca documentazione (non supportato nativamente)
+#   openai/deep-research        -> analisi approfondita (non supportato nativamente)
 #
 
+model: openai/architect
+editor-model: openai/backend-coder
 weak-model: openai/fast-coder
-editor-model: openai/fast-coder
 
 #
-# OPTIONAL SPECIALIZED MODELS
+# ARCHITECT MODE
+# architect: false = modalita' standard (solo model)
+# architect: true  = modalita' a due passi (model pianifica, editor-model edita)
+# Cambiare a true per task complessi multi-file.
 #
 
-architect-model: openai/architect
-research-model: openai/deep-research
+architect: false
+auto-accept-architect: true
+editor-edit-format: diff
 
 #
 # UI / UX
@@ -39,8 +64,7 @@ subtree-only: true
 # TOKEN / PERFORMANCE
 #
 
-map-tokens: 4096
-cache-prompts: true
+map-tokens: 0
 check-update: false
 
 #
