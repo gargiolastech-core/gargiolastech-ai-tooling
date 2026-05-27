@@ -20,7 +20,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------
-# Validazione fail-fast: se ProjectId è ancora il placeholder
+# Validazione fail-fast: se ProjectId e' ancora il placeholder
 # del template, fermarsi prima di chiamare Infisical (che
 # ritornerebbe un errore criptico).
 # ---------------------------------------------------------------
@@ -144,11 +144,23 @@ function Export-InfisicalEnvFile {
             --projectId $ProjectId `
             --env $Environment `
             --path $path `
-            --format dotenv
+            --format dotenv-export
 
         if ($LASTEXITCODE -ne 0) {
             throw "Errore durante export Infisical per path '$path'."
         }
+
+        # Strip di sicurezza: rimuove apici singoli/doppi
+        # intorno ai valori (KEY='value' -> KEY=value)
+        $quotePattern = "^([^=]+)=([`"'])(.*)\2\s*$"
+        $lines = $content -split "`n" | ForEach-Object {
+            if ($_ -match $quotePattern) {
+                "$($Matches[1])=$($Matches[3])"
+            } else {
+                $_
+            }
+        }
+        $content = $lines -join "`n"
 
         Add-Content -Path $OutputPath -Value ""
         Add-Content -Path $OutputPath -Value "# Path: $path"
