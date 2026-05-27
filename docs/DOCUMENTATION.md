@@ -1,7 +1,13 @@
 # GargiolasTech AI Tooling — Documentazione Tecnica Enterprise
 
 > **Repository:** `gargiolastech-ai-tooling`
-> **Versione documento:** 2.10 — Continue secret resolution corretta
+> **Versione documento:** 2.11 — Sezione 36 Reset e procedura teardown/setup
+
+> ### Cosa è cambiato rispetto alla v2.10
+> - Aggiunta **sezione 36** "Reset e ripristino da zero": procedura completa teardown + setup pulito.
+> - Aggiunto `Reset-AiTooling.ps1` al repo (`scripts/windows/`): azzera WCM, venv, alias `$PROFILE`, runtime, `~/.continue/.env`, `projects.json` (con conferma).
+> - Sezione 37 (Git Submodule) riposizionata correttamente prima della Conclusione.
+> - Aggiornati: tree repo (sezione 10), tutorial setup (sezione 11), onboarding checklist (sezione 33), FAQ (sezione 34).
 > **Audience:** Backend Developers · DevOps Engineers · Platform Engineers · Security Engineers
 > **Classificazione:** Documentazione architetturale e operativa di riferimento
 
@@ -68,8 +74,9 @@
 32. [CI/CD considerations](#32-cicd-considerations)
 33. [Developer onboarding guide](#33-developer-onboarding-guide)
 34. [FAQ](#34-faq)
-35. [Distribuzione via Git Submodule](#35-distribuzione-via-git-submodule)
-36. [Modalità di utilizzo di Aider](#36-modalità-di-utilizzo-di-aider)
+35. [Modalità di utilizzo di Aider](#35-modalità-di-utilizzo-di-aider)
+36. [Reset e ripristino da zero](#36-reset-e-ripristino-da-zero)
+37. [Distribuzione via Git Submodule](#37-distribuzione-via-git-submodule)
 
 ---
 
@@ -770,6 +777,7 @@ gargiolastech-ai-tooling/
 │       ├── Install-Aider.cmd
 │       ├── Install-Aider.ps1
 │       ├── Install-PowerShellProfile.ps1
+│       ├── Reset-AiTooling.ps1
 │       ├── Set-InfisicalCredential.ps1
 │       ├── Start-AiIde.cmd
 │       ├── Start-AiIde.ps1
@@ -796,6 +804,7 @@ gargiolastech-ai-tooling/
 | `scripts/windows/Install-Aider.cmd` | Wrapper CMD | Wrapper double-clickable per `Install-Aider.ps1`, propaga argomenti con `%*` | ✅ | ❌ |
 | `scripts/windows/Install-Aider.ps1` | Provisioner | Installa Aider in un virtualenv Python isolato (`~/.venvs/aider-env`); supporta `-PythonVersion`, `-VenvPath`, `-ForceRecreate` | ✅ | ❌ |
 | `scripts/windows/Install-PowerShellProfile.ps1` | Configuratore workstation | Aggiunge `aider-here` al `$PROFILE` PowerShell; idempotente via marcatore; attiva l'alias nella sessione corrente senza riavvio | ✅ | ❌ |
+| `scripts/windows/Reset-AiTooling.ps1` | Teardown workstation | Azzera WCM, venv Aider, alias `$PROFILE`, runtime, `~/.continue/.env`, `projects.json` (con conferma); idempotente; supporta `-Force` per esecuzione non interattiva | ✅ | ❌ |
 | `scripts/windows/Uninstall-PowerShellProfile.ps1` | Configuratore workstation | Rimuove il blocco `aider-here` dal `$PROFILE` PowerShell tramite regex sul marcatore | ✅ | ❌ |
 | `scripts/windows/Start-AiIde.cmd` | Wrapper CMD | Lancia `Start-AiIde.ps1` bypassando ExecutionPolicy | ✅ | ❌ |
 | `scripts/windows/Start-AiIde.ps1` | Launcher | Multi-project / multi-IDE chooser, valida config, risolve IDE, delega a `Start-Ide-With-AiSecrets.ps1` | ✅ | ❌ |
@@ -3538,6 +3547,8 @@ Per un nuovo developer:
 - [ ] **Step 11** — Developer esegue `Install-AiIdeDesktopShortcut.ps1` per shortcut sul desktop.
 - [ ] **Step 12** — Developer firma documento di acknowledgment delle security best practices.
 
+> **Reset / ri-setup**: se in qualsiasi momento occorre ripartire da zero sulla stessa macchina, usare `Reset-AiTooling.ps1` per il teardown completo prima di ri-eseguire dal Step 6. Vedi Sezione 36.
+
 ### 33.2 Comando "all-in-one" per onboarding
 
 Per accelerare, distribuire uno script bootstrap che combini tutti gli step:
@@ -3788,13 +3799,25 @@ Detto questo, **la documentazione ufficiale e gli alias suggeriti (Sezione 20.8)
 
 **Workflow tipico combinato**: `Start-AiIde.cmd` per aprire l'IDE con Continue, poi dal terminale integrato dell'IDE `Start-Aider.cmd` (o alias `aider-here`) per sessioni Aider sulla stessa directory.
 
+### Q23: Come si azzera tutto e si riparte da zero?
+
+**A**: Usare `Reset-AiTooling.ps1` nella cartella `scripts/windows/`:
+
+```powershell
+.\Reset-AiTooling.ps1
+```
+
+Lo script azzera nell'ordine: credenziali WCM → virtualenv Aider → alias `$PROFILE` → file runtime → `~/.continue/.env` → `projects.json` (con conferma interattiva). Per automatizzare completamente senza prompt usare `-Force`. Per mantenere `projects.json` usare `-KeepProjectsJson`.
+
+Dopo il teardown, ri-eseguire dal bootstrap: `bootstrap-ai-tooling.cmd` → `Install-Aider.cmd` → `Install-PowerShellProfile.ps1` → `Start-AiIde.cmd`. Vedi Sezione 36 per la procedura completa.
+
 ---
 
-## 36. Modalità di utilizzo di Aider
+## 35. Modalità di utilizzo di Aider
 
 Questa sezione raccoglie in un unico punto di riferimento tutte le modalità con cui è possibile avviare e usare Aider dopo aver completato il setup descritto nelle sezioni precedenti. Ogni modalità copre un caso d'uso specifico e produce lo stesso risultato in termini di sicurezza: segreti sempre iniettati a runtime da Infisical, mai persistiti.
 
-### 36.1 Prerequisiti comuni a tutte le modalità
+### 35.1 Prerequisiti comuni a tutte le modalità
 
 Prima di poter usare Aider con qualsiasi modalità, i seguenti passi devono essere stati completati **una volta per macchina**:
 
@@ -3806,7 +3829,7 @@ Prima di poter usare Aider con qualsiasi modalità, i seguenti passi devono esse
 
 ---
 
-### 36.2 Modalità 1 — Da repo consumer (submodule)
+### 35.2 Modalità 1 — Da repo consumer (submodule)
 
 **Caso d'uso**: il repo su cui stai lavorando ha già il submodule configurato. È il flusso standard per i progetti aziendali.
 
@@ -3840,7 +3863,7 @@ flowchart LR
 
 ---
 
-### 36.3 Modalità 2 — Da qualsiasi directory (launcher diretto)
+### 35.3 Modalità 2 — Da qualsiasi directory (launcher diretto)
 
 **Caso d'uso**: stai lavorando su un progetto che **non ha** il submodule, su una cartella temporanea, su un nuovo progetto da zero, o semplicemente vuoi Aider lì dove sei senza configurazione previa.
 
@@ -3866,7 +3889,7 @@ powershell -ExecutionPolicy Bypass -File `
 
 ---
 
-### 36.4 Modalità 3 — Alias PowerShell `aider-here` (più veloce)
+### 35.4 Modalità 3 — Alias PowerShell `aider-here` (più veloce)
 
 **Caso d'uso**: identico alla Modalità 2, ma invocabile con un comando breve da qualsiasi sessione PowerShell grazie all'alias installato nel `$PROFILE`.
 
@@ -3901,7 +3924,7 @@ flowchart TB
 
 ---
 
-### 36.5 Modalità 4 — Dal terminale integrato dell'IDE
+### 35.5 Modalità 4 — Dal terminale integrato dell'IDE
 
 **Caso d'uso**: hai già aperto l'IDE con `Start-AiIde.cmd` e vuoi una sessione Aider **sullo stesso progetto** senza aprire un terminale esterno.
 
@@ -3922,7 +3945,7 @@ aider-here
 
 ---
 
-### 36.6 Confronto sintetico delle modalità
+### 35.6 Confronto sintetico delle modalità
 
 | Modalità | Comando | Submodule richiesto | Alias richiesto | Caso d'uso ideale |
 |---|---|:---:|:---:|---|
@@ -3933,7 +3956,7 @@ aider-here
 
 ---
 
-### 36.7 Cosa succede in tutte le modalità (pipeline comune)
+### 35.7 Cosa succede in tutte le modalità (pipeline comune)
 
 Indipendentemente dalla modalità scelta, il flusso interno è sempre identico:
 
@@ -3960,7 +3983,7 @@ flowchart TB
 
 ---
 
-### 36.8 Scelta della modalità — albero decisionale
+### 35.8 Scelta della modalità — albero decisionale
 
 ```mermaid
 flowchart TB
@@ -3983,9 +4006,184 @@ flowchart TB
 
 ---
 
-## Conclusione
+## 36. Reset e ripristino da zero
 
-Questa documentazione descrive un'architettura **runtime-first, zero-trust, IDE-agnostic** per la gestione dei segreti AI nella developer experience .NET. Le decisioni architetturali sono guidate da quattro principi non negoziabili:
+### 36.1 Quando usare il reset
+
+| Scenario | Azione consigliata |
+|---|---|
+| Credenziali Infisical ruotate o compromesse | Solo Step teardown WCM → ri-bootstrap |
+| Virtualenv Aider corrotto | Solo `Remove-Item ~/.venvs/aider-env` → `Install-Aider.cmd` |
+| Cambio path del repository centrale | Solo `Uninstall-PowerShellProfile.ps1` → `Install-PowerShellProfile.ps1` |
+| **Reset completo** — test da zero, cambio macchina, onboarding pulito | `Reset-AiTooling.ps1` + setup completo |
+
+### 36.2 `Reset-AiTooling.ps1`
+
+Script nella cartella `scripts/windows/`. Azzera tutti gli artefatti lasciati sulla macchina dal tooling.
+
+```powershell
+# Interattivo — chiede conferma per projects.json
+.\Reset-AiTooling.ps1
+
+# Non interattivo — azzera tutto senza prompt (utile per test automatizzati)
+.\Reset-AiTooling.ps1 -Force
+
+# Mantieni projects.json (utile se vuoi solo re-installare tool)
+.\Reset-AiTooling.ps1 -KeepProjectsJson
+
+# Scope custom
+.\Reset-AiTooling.ps1 -CredentialScope "altro-scope"
+```
+
+**Parametri**:
+
+| Parametro | Default | Significato |
+|---|---|---|
+| `-CredentialScope` | `gargiolastech-ai-tooling-dev` | Scope WCM da cui leggere i target da eliminare |
+| `-VenvPath` | `~/.venvs/aider-env` | Path del virtualenv Aider da rimuovere |
+| `-KeepProjectsJson` | off | Switch: mantieni `projects.json` senza chiedere |
+| `-Force` | off | Switch: nessun prompt interattivo, azzera tutto |
+
+### 36.3 Cosa viene azzerato (e cosa no)
+
+**Rimosso da `Reset-AiTooling.ps1`**:
+
+| Artefatto | Path | Metodo |
+|---|---|---|
+| Credenziale client-id | WCM target `<scope>-client-id` | `cmdkey /delete` |
+| Credenziale client-secret | WCM target `<scope>-client-secret` | `cmdkey /delete` |
+| Virtualenv Aider | `~/.venvs/aider-env/` | `Remove-Item -Recurse` |
+| Alias `aider-here` | Blocco nel `$PROFILE` PowerShell | Regex removal |
+| File runtime | `~/.gargiolastech/ai-tooling/runtime/` | `Remove-Item -Recurse` |
+| Continue secrets | `~/.continue/.env` | `Remove-Item` |
+| Config utente | `~/.gargiolastech/ai-tooling/projects.json` | `Remove-Item` (con conferma) |
+
+**Non toccato**:
+
+| Cosa | Perché |
+|---|---|
+| Il repository locale `gargiolastech-ai-tooling/` | È il codice sorgente, non un artefatto runtime |
+| Python di sistema | Non installato da questo tooling |
+| `~/.continue/config.json` | Configurazione Continue (non sensibile) gestita dall'utente |
+| Resto del `$PROFILE` PowerShell | Solo il blocco marcato `[gargiolastech-ai-tooling]` viene rimosso |
+
+### 36.4 Procedura teardown + setup completo
+
+#### Fase 1 — Teardown
+
+```powershell
+cd C:\dev\gargiolastech-ai-tooling\scripts\windows
+.\Reset-AiTooling.ps1
+```
+
+Output atteso (con `projects.json` mantenuto):
+
+```
+============================================================
+ RESET gargiolastech-ai-tooling
+============================================================
+
+Questo script rimuove:
+  - Credenziali WCM   : gargiolastech-ai-tooling-dev-client-id / client-secret
+  - Virtualenv Aider  : C:\Users\<utente>\.venvs\aider-env
+  - Alias PowerShell  : aider-here dal $PROFILE
+  - Runtime files     : ~/.gargiolastech/ai-tooling/runtime/
+  - Continue secrets  : ~/.continue/.env
+  - Config utente     : ~/.gargiolastech/ai-tooling/projects.json (con conferma)
+
+Continuare? [s/N]: s
+
+...
+
+============================================================
+ Riepilogo reset
+============================================================
+
+Reset completato senza errori.
+
+Prossimi passi per il setup pulito:
+
+  1. bootstrap-ai-tooling.cmd
+  2. Install-Aider.cmd
+  3. Install-PowerShellProfile.ps1
+  4. Start-AiIde.cmd   <- primo avvio genera projects.json
+  5. Start-AiIde.cmd   <- verifica IDE + Continue
+  6. Start-Aider.cmd   <- verifica Aider
+```
+
+#### Fase 2 — Setup pulito
+
+```powershell
+# Step 1: credenziali Infisical
+.\bootstrap-ai-tooling.cmd
+
+# Step 2: virtualenv Aider
+.\Install-Aider.cmd
+
+# Step 3: alias aider-here nel $PROFILE
+.\Install-PowerShellProfile.ps1
+
+# Step 4: primo avvio — genera projects.json se non esiste
+.\Start-AiIde.cmd
+# Modifica ~/.gargiolastech/ai-tooling/projects.json:
+#   - ides.rider.path → path di rider64.exe sulla tua macchina
+#   - infisicalProjectId → UUID del progetto Infisical
+
+# Step 5: secondo avvio — verifica IDE + Continue
+.\Start-AiIde.cmd
+
+# Step 6: verifica Aider
+cd C:\dev\tuo-progetto
+.\Start-Aider.cmd   # oppure: aider-here
+```
+
+#### Verifica post-setup
+
+```powershell
+# WCM: le credenziali ci sono?
+cmdkey /list | Select-String "gargiolastech"
+
+# Aider: installato?
+& "$HOME\.venvs\aider-env\Scripts\aider.exe" --version
+
+# Continue: il file secrets è stato generato?
+Test-Path "$HOME\.continue\.env"
+Get-Content "$HOME\.continue\.env" | Select-Object -First 5
+
+# Alias: funziona?
+aider-here  # dalla root di un repo
+```
+
+### 36.5 Reset parziale — casi frequenti
+
+**Ruotazione credenziali Infisical** (senza azzerare il resto):
+
+```powershell
+# Rimuovi le vecchie
+cmdkey /delete:gargiolastech-ai-tooling-dev-client-id
+cmdkey /delete:gargiolastech-ai-tooling-dev-client-secret
+
+# Scrivi le nuove
+.\bootstrap-ai-tooling.cmd
+```
+
+**Reinstalla solo Aider** (es. dopo upgrade Python major):
+
+```powershell
+Remove-Item -Recurse -Force "$HOME\.venvs\aider-env"
+.\Install-Aider.cmd
+# oppure con nuova versione Python:
+.\Install-Aider.ps1 -PythonVersion 3.13 -ForceRecreate
+```
+
+**Aggiorna l'alias `aider-here`** (es. dopo aver spostato il repo):
+
+```powershell
+.\Uninstall-PowerShellProfile.ps1
+.\Install-PowerShellProfile.ps1
+```
+
+---
 
 1. **Nessun segreto AI risiede mai durevolmente sul disco** (eccetto i Client ID/Secret di bootstrap, protetti da DPAPI).
 2. **Il repository è inerte**: zero segreti, zero PII, zero configurazione utente-specifica.
@@ -4005,15 +4203,9 @@ L'estendibilità è **per design**: cross-platform, multi-IDE (già abilitato in
 
 ---
 
-**Versione documento:** 2.9 — Sezione 36 modalità di utilizzo Aider
-**Ultima revisione:** 26 maggio 2026
-**Manutentori:** Platform Engineering Team — GargiolasTech
+## 37. Distribuzione via Git Submodule
 
----
-
-## 35. Distribuzione via Git Submodule
-
-### 35.1 Problema risolto
+### 37.1 Problema risolto
 
 Senza una strategia di distribuzione centralizzata, ogni repository applicativo che vuole usare il launcher AI deve:
 
@@ -4023,7 +4215,7 @@ Senza una strategia di distribuzione centralizzata, ogni repository applicativo 
 
 Il modello **Git submodule** risolve il problema dichiarativamente: il repo centrale è versionato una sola volta, i repo consumer lo referenziano a uno specifico commit, l'aggiornamento è un'operazione Git esplicita e tracciata.
 
-### 35.2 Architettura
+### 37.2 Architettura
 
 ```mermaid
 flowchart TB
@@ -4068,7 +4260,7 @@ flowchart TB
 - La configurazione `projects.json` vive **esclusivamente** nella workstation (`~/.gargiolastech/ai-tooling/`). Non è nei repo consumer, non è nel repo centrale.
 - Ogni repo consumer può pinnare il submodule a commit diversi. L'aggiornamento è una scelta esplicita, non automatica.
 
-### 35.3 Struttura del repo consumer dopo il setup
+### 37.3 Struttura del repo consumer dopo il setup
 
 ```
 quoteflow/                              ← root del repo consumer
@@ -4091,7 +4283,7 @@ quoteflow/                              ← root del repo consumer
     branch = main
 ```
 
-### 35.4 Criterio di selezione dei thin wrapper
+### 37.4 Criterio di selezione dei thin wrapper
 
 Il repo consumer include un thin wrapper quando lo script risponde **sì** ad almeno uno di questi criteri:
 
@@ -4109,7 +4301,7 @@ Il repo consumer include un thin wrapper quando lo script risponde **sì** ad al
 
 **Regola pratica per futuri script**: se un nuovo tool AI ha senso invocarlo dalla root di un repo specifico o nell'onboarding di un progetto, aggiungere il suo thin wrapper qui. Altrimenti rimane nel repo centrale.
 
-### 35.5 Anatomia dei thin wrapper
+### 37.5 Anatomia dei thin wrapper
 
 I tre thin wrapper nel repo consumer seguono tutti lo stesso pattern. Differiscono solo nel nome dello script target e nel commento descrittivo. Esempio con `Start-Aider.cmd`:
 
@@ -4149,7 +4341,7 @@ Gli altri due wrapper (`bootstrap-ai-tooling.cmd`, `Install-Aider.cmd`) sono ide
 | `%*` | Propaga tutti gli argomenti al launcher centrale (es. `-ConfigPath`) |
 | Encoding ANSI (CP1252) | `cmd.exe` interpreta i `.cmd` in ANSI; UTF-8 causa artefatti nei messaggi di errore |
 
-### 35.6 Setup di un nuovo repo consumer
+### 37.6 Setup di un nuovo repo consumer
 
 #### Prerequisito
 
@@ -4198,9 +4390,9 @@ git add .gitmodules gargiolastech-ai-tooling `
 git commit -m "chore: add gargiolastech-ai-tooling submodule"
 ```
 
-> **Nota**: i thin wrapper devono essere presenti anche in `templates/consumer-wrappers/` del repo centrale per supportare l'Opzione B. Vedi Sezione 35.11.
+> **Nota**: i thin wrapper devono essere presenti anche in `templates/consumer-wrappers/` del repo centrale per supportare l'Opzione B. Vedi Sezione 37.11.
 
-### 35.7 Onboarding developer su repo consumer esistente
+### 37.7 Onboarding developer su repo consumer esistente
 
 Quando un developer clona un repo consumer che ha già il submodule configurato:
 
@@ -4228,7 +4420,7 @@ Start-Aider.cmd
 
 **Nessuno script esterno da scaricare, nessun path manuale da ricordare.** Tutto è nella root del repo che il developer ha già clonato.
 
-### 35.8 Sequence diagram: flusso completo da repo consumer
+### 37.8 Sequence diagram: flusso completo da repo consumer
 
 ```mermaid
 sequenceDiagram
@@ -4254,7 +4446,7 @@ sequenceDiagram
     PS1->>PS1: Avvia Aider nella cwd corrente (root del consumer)
 ```
 
-### 35.9 Aggiornamento del submodule
+### 37.9 Aggiornamento del submodule
 
 #### Aggiornare un singolo repo consumer
 
@@ -4302,7 +4494,7 @@ git add gargiolastech-ai-tooling
 git commit -m "chore: pin ai-tooling submodule to v2.6.0"
 ```
 
-### 35.10 Aggiornamenti al repo centrale
+### 37.10 Aggiornamenti al repo centrale
 
 Quando viene modificato qualcosa nel repo centrale (nuovo script, fix, nuova sezione `projects.json`), **i repo consumer non si aggiornano automaticamente**. Il submodule è pinnato a un commit specifico. L'aggiornamento è sempre **opt-in** tramite `git submodule update --remote` + commit.
 
@@ -4315,9 +4507,9 @@ Questo è il comportamento corretto per ambienti enterprise: nessun cambio impli
 3. Comunicare breaking changes via release notes GitHub.
 4. I repo consumer aggiornano in modo coordinato durante sprint di manutenzione.
 
-### 35.11 Struttura consigliata del repo centrale per supportare i consumer
+### 37.11 Struttura consigliata del repo centrale per supportare i consumer
 
-Aggiungere al repo centrale una cartella `templates/consumer-wrappers/` con i thin wrapper pronti da copiare (supporta il setup manuale, Opzione B della Sezione 35.6):
+Aggiungere al repo centrale una cartella `templates/consumer-wrappers/` con i thin wrapper pronti da copiare (supporta il setup manuale, Opzione B della Sezione 37.6):
 
 ```
 gargiolastech-ai-tooling/
@@ -4336,7 +4528,7 @@ In questo modo il setup manuale funziona senza `Invoke-WebRequest` o script este
 
 > Quando in futuro si aggiungono nuovi tool repo-aware o nuovi step di onboarding, si aggiunge il relativo thin wrapper in questa cartella e si aggiorna `Add-AiToolingSubmodule.ps1` per includerlo automaticamente.
 
-### 35.12 `.gitignore` per i repo consumer
+### 37.12 `.gitignore` per i repo consumer
 
 Aggiungere al `.gitignore` del repo consumer solo la cartella runtime (generata localmente dalla workstation):
 
@@ -4350,7 +4542,7 @@ gargiolastech-ai-tooling/runtime/
 
 > **Attenzione**: non aggiungere `gargiolastech-ai-tooling/` al `.gitignore` del repo consumer. Il submodule deve essere tracciato da Git. Solo i file runtime dentro la cartella vanno ignorati.
 
-### 35.13 Troubleshooting submodule
+### 37.13 Troubleshooting submodule
 
 | Sintomo | Causa | Soluzione |
 |---|---|---|
@@ -4360,3 +4552,26 @@ gargiolastech-ai-tooling/runtime/
 | Submodule in stato `(modified content)` | File modificati dentro il submodule | `cd gargiolastech-ai-tooling && git checkout .` per ripristinare |
 | Submodule in stato detached HEAD | Normale dopo `git submodule update` | Usare `git submodule update --remote` per portarlo all'ultimo commit del branch |
 | Thin wrapper non trova `Start-Aider.cmd` | Submodule inizializzato ma script rinominato in versione nuova | `git submodule update --remote` per allineare alla versione corrente |
+
+## Conclusione
+
+Questa documentazione descrive un'architettura **runtime-first, zero-trust, IDE-agnostic** per la gestione dei segreti AI nella developer experience .NET. Le decisioni architetturali sono guidate da quattro principi non negoziabili:
+
+1. **Nessun segreto AI risiede mai durevolmente sul disco** (eccetto i Client ID/Secret di bootstrap, protetti da DPAPI).
+2. **Il repository è inerte**: zero segreti, zero PII, zero configurazione utente-specifica.
+3. **Ogni avvio è una fresh injection**: ciò che vale è quanto è in Infisical *in questo momento*, non quanto era ieri.
+4. **L'IDE è un dettaglio di configurazione, non di codice**: l'engine non conosce Rider o Visual Studio, riceve un path eseguibile e una solution. Aggiungere un nuovo IDE è una modifica dichiarativa al JSON.
+
+A questi si aggiungono tre principi operativi introdotti nelle versioni successive:
+
+5. **Le dipendenze runtime sono isolate**: Aider vive in un virtualenv dedicato per non contaminare l'ambiente Python di sistema.
+6. **Il launcher Aider è senza frizioni**: nessuna selezione, nessuna configurazione progetto — `Start-Aider.cmd` da qualsiasi directory, stessa sicurezza degli altri launcher.
+7. **Il setup è reversibile e ripetibile**: `Reset-AiTooling.ps1` azzera tutto in modo ordinato; ogni passo di setup è idempotente.
+
+> *"Repository inerte. Segreti effimeri. Runtime autoritativo. Identità tecnica disaccoppiata. IDE intercambiabile. Dipendenze isolate. Reset pulito."*
+
+---
+
+**Versione documento:** 2.11 — Sezione 36 Reset e procedura teardown/setup
+**Ultima revisione:** 27 maggio 2026
+**Manutentori:** Platform Engineering Team — GargiolasTech
