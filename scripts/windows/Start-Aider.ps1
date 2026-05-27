@@ -297,6 +297,34 @@ Write-Host ""
 Write-Host "Aider env: $aiderEnvPath"
 
 # ---------------------------------------------------------------
+# Copia .aider.conf.yml nella directory corrente.
+# Aider cerca il file di configurazione nella working directory
+# (e nelle directory parent) per caricarlo automaticamente.
+# Il file sorgente è in aider/.aider.conf.yml nel repo centrale,
+# che costituisce la configurazione condivisa tra tutti i progetti.
+# Se nella cwd esiste già un .aider.conf.yml (override locale),
+# non viene sovrascritto — il developer ha scelto una config custom.
+# ---------------------------------------------------------------
+
+$aiderConfSource = [System.IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\aider\.aider.conf.yml")
+)
+
+$aiderConfDest = Join-Path $workingDir ".aider.conf.yml"
+
+if (Test-Path $aiderConfSource) {
+    if (-not (Test-Path $aiderConfDest)) {
+        Copy-Item -Path $aiderConfSource -Destination $aiderConfDest
+        Write-Host "Aider conf: $aiderConfDest (copiato da repo centrale)"
+    } else {
+        Write-Host "Aider conf: $aiderConfDest (già presente — mantenuto override locale)"
+    }
+} else {
+    Write-Host "Aider conf: non trovato in $aiderConfSource — Aider userà i propri default." `
+        -ForegroundColor Yellow
+}
+
+# ---------------------------------------------------------------
 # Avvio Aider nella directory corrente (bloccante).
 # Nessun Push-Location: il chiamante è già nella directory
 # corretta. Il terminale torna disponibile all'uscita da Aider.

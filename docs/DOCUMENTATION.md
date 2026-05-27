@@ -1,17 +1,19 @@
 # GargiolasTech AI Tooling — Documentazione Tecnica Enterprise
 
 > **Repository:** `gargiolastech-ai-tooling`
-> **Versione documento:** 2.11 — Sezione 36 Reset e procedura teardown/setup
-
-> ### Cosa è cambiato rispetto alla v2.10
-> - Aggiunta **sezione 36** "Reset e ripristino da zero": procedura completa teardown + setup pulito.
-> - Aggiunto `Reset-AiTooling.ps1` al repo (`scripts/windows/`): azzera WCM, venv, alias `$PROFILE`, runtime, `~/.continue/.env`, `projects.json` (con conferma).
-> - Sezione 37 (Git Submodule) riposizionata correttamente prima della Conclusione.
-> - Aggiornati: tree repo (sezione 10), tutorial setup (sezione 11), onboarding checklist (sezione 33), FAQ (sezione 34).
+> **Versione documento:** 3.0 — Configurazioni Aider/Continue a livello root
 > **Audience:** Backend Developers · DevOps Engineers · Platform Engineers · Security Engineers
 > **Classificazione:** Documentazione architetturale e operativa di riferimento
 
-> ### Cosa è cambiato rispetto alla v2.9 (BREAKING)
+> ### Cosa è cambiato rispetto alla v2.11
+> - `templates/aider/.aider.conf.yml` → spostato in `aider/.aider.conf.yml` (root del repo).
+> - `templates/continue/config.yaml` → spostato in `continue/config.yaml` (root del repo).
+> - `Start-Aider.ps1`: copia `aider/.aider.conf.yml` nella working directory prima di avviare Aider; non sovrascrive override locali.
+> - `Start-Ide-With-AiSecrets.ps1`: copia `continue/config.yaml` in `~/.continue/config.yaml` ad ogni avvio IDE.
+> - Sezione 30.2 aggiornata da "estensione futura" a struttura corrente.
+> - Aggiunto `CHANGELOG.md` al repo.
+
+> ### Cosa è cambiato rispetto alla v2.10 (BREAKING)
 > - **Fix architetturale critico**: corretto il meccanismo di iniezione segreti per Continue. Le IDE extensions di Continue **non leggono** le variabili d'ambiente del processo IDE (limitazione documentata in [Continue FAQ](https://docs.continue.dev/faqs)); il vecchio meccanismo `$env:CONTINUE_ENV_FILE` era inefficace.
 > - Il file di segreti Continue viene ora scritto direttamente in `~/.continue/.env` (path di ricerca nativo di Continue).
 > - Il path `~/.gargiolastech/ai-tooling/runtime/continue.env` non viene più generato.
@@ -762,17 +764,23 @@ Questo è un trade-off **deliberato**: il valore di sicurezza di non avere file 
 
 ```
 gargiolastech-ai-tooling/
-├── LICENSE                          ← MIT License
-├── README.md                        ← Repo-level overview con link a docs/
+├── .gitignore
+├── CHANGELOG.md                         ← Storico versioni
+├── LICENSE
+├── README.md
+├── aider/                               ← Configurazione Aider condivisa tra tutti i progetti
+│   └── .aider.conf.yml                  ← Copiata automaticamente nella cwd da Start-Aider.ps1
+├── continue/                            ← Configurazione Continue condivisa
+│   └── config.yaml                      ← Copiata in ~/.continue/ da Start-Ide-With-AiSecrets.ps1
 ├── docs/
-│   └── DOCUMENTATION.md             ← Questa documentazione enterprise
+│   └── DOCUMENTATION.md
 ├── images/
-│   ├── Icona.ico                    ← Icona del launcher (formato Windows shortcut)
-│   └── Icona.png                    ← Versione PNG per documentazione/web
+│   ├── Icona.ico
+│   └── Icona.png
 ├── scripts/
-│   └── windows/                     ← Tutti gli script PowerShell e CMD
-│       ├── bootstrap-ai-tooling.cmd
+│   └── windows/
 │       ├── Add-AiToolingSubmodule.ps1
+│       ├── bootstrap-ai-tooling.cmd
 │       ├── Install-AiIdeDesktopShortcut.ps1
 │       ├── Install-Aider.cmd
 │       ├── Install-Aider.ps1
@@ -786,15 +794,23 @@ gargiolastech-ai-tooling/
 │       ├── Start-Ide-With-AiSecrets.ps1
 │       └── Uninstall-PowerShellProfile.ps1
 └── templates/
-    └── projects.json.template       ← Template configurazione multi-progetto / multi-IDE
+    ├── projects.json.template
+    └── consumer-wrappers/
+        ├── bootstrap-ai-tooling.cmd
+        ├── Install-Aider.cmd
+        └── Start-Aider.cmd
 ```
 
 ### 10.2 Tabella esplicativa file-per-file
 
 | Percorso | Tipo | Responsabilità | Idempotente | Sensibile |
 |---|---|---|:---:|:---:|
+| `.gitignore` | Configurazione | Esclude runtime, segreti locali, directory IDE | — | ❌ |
+| `CHANGELOG.md` | Documento | Storico delle versioni (Keep a Changelog) | — | ❌ |
 | `LICENSE` | Documento | Termini di licenza (MIT) | — | ❌ |
 | `README.md` | Documento | Punto d'ingresso documentale + link a `docs/` | — | ❌ |
+| `aider/.aider.conf.yml` | Configurazione | Config Aider condivisa (modelli, behavior, git); copiata dal launcher nella cwd del progetto | — | ❌ |
+| `continue/config.yaml` | Configurazione | Config Continue condivisa (modelli AI, provider); copiata dal launcher in `~/.continue/` | — | ❌ |
 | `docs/DOCUMENTATION.md` | Documento | Documentazione tecnica enterprise completa | — | ❌ |
 | `images/Icona.ico` | Asset binario | Icona del collegamento desktop (formato `.ico` richiesto da Windows) | — | ❌ |
 | `images/Icona.png` | Asset binario | Versione PNG dell'icona per uso non-shortcut (es. documentazione, web) | — | ❌ |
@@ -1966,30 +1982,35 @@ CONTINUE_TELEMETRY_ENABLED="false"
 
 I commenti `# Path: <path>` sono **aggiunti dallo script per tracciabilità** durante il debug. Non hanno effetti runtime ma facilitano l'identificazione della sorgente dei singoli segreti.
 
-### 19.4 Configurazione `config.json` di Continue
+### 19.4 Configurazione `config.yaml` di Continue
 
-La configurazione di Continue (non sensibile) può essere mantenuta nel repository, ad esempio in una cartella `continue/config.json` (non presente nel repo base ma punto di estensione naturale):
+La configurazione dei modelli AI di Continue è versionata nel repository in `continue/config.yaml`. Ad ogni avvio dell'IDE tramite `Start-AiIde.cmd`, lo script engine la copia automaticamente in `~/.continue/config.yaml`.
 
-```json
-{
-  "models": [
-    {
-      "title": "Claude Sonnet (Anthropic)",
-      "provider": "anthropic",
-      "model": "claude-sonnet-4-20250514",
-      "apiKey": "${ANTHROPIC_API_KEY}"
-    },
-    {
-      "title": "GPT-4 (OpenAI)",
-      "provider": "openai",
-      "model": "gpt-4o",
-      "apiKey": "${OPENAI_API_KEY}"
-    }
-  ]
-}
+**Questo significa**: ogni developer sulla propria macchina ha sempre la versione aggiornata della configurazione AI senza alcun intervento manuale. Un aggiornamento al file nel repo (es. aggiunta di un nuovo modello) si propaga a tutti i developer al successivo `Start-AiIde.cmd`.
+
+```yaml
+name: GargiolasTech AI Workspace
+version: 1.0.0
+schema: v1
+
+models:
+  - name: Backend Coder
+    provider: openai
+    model: backend-coder
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      - edit
+      - apply
+      - autocomplete
 ```
 
-L'**interpolazione `${VAR}`** è una feature di Continue che risolve a runtime le variabili d'ambiente lette da `CONTINUE_ENV_FILE`.
+La sintassi `${{ secrets.NAME }}` fa riferimento ai segreti definiti in Infisical nel path `/continue`. L'iniezione avviene tramite `~/.continue/.env` generato ad ogni avvio (Sezione 19.2).
+
+**Gestione override locale**: se un developer ha necessità di una configurazione personalizzata, può editare `~/.continue/config.yaml` dopo l'avvio. Al successivo `Start-AiIde.cmd` la versione del repo sovrascriverà nuovamente il file. Per override permanenti usare la feature di Continue "local override" o concordare la modifica nel repo centrale.
+
+> **Nota**: il file `~/.continue/config.yaml` viene sempre sovrascritto dal launcher, a differenza di `~/.continue/.env` (che viene sempre rigenerato) e di `.aider.conf.yml` (che non sovrascrive override locali — vedi Sezione 20.6).
 
 ### 19.5 Flusso di iniezione
 
@@ -2225,6 +2246,35 @@ Nessun residuo nel registry, nessun PATH cleanup necessario.
 #### Caso d'uso
 
 Il developer apre un terminale **in qualsiasi directory** — un nuovo progetto da scrivere da zero, una repo non configurata in `projects.json`, una sotto-cartella di un monorepo — e vuole avviare Aider lì immediatamente.
+
+#### Configurazione automatica `.aider.conf.yml`
+
+Prima di lanciare Aider, il launcher copia `aider/.aider.conf.yml` dal repo centrale nella directory corrente. Aider cerca il file di configurazione nella working directory (e nelle directory parent) per caricarlo automaticamente — nessun parametro `--config` necessario.
+
+**Logica di copia**:
+
+```
+Se aider/.aider.conf.yml esiste nel repo centrale:
+  Se .aider.conf.yml NON esiste nella cwd → copia (primo setup)
+  Se .aider.conf.yml ESISTE nella cwd     → NON sovrascrive (override locale rispettato)
+Se aider/.aider.conf.yml non esiste nel repo:
+  Warning giallo — Aider usa i propri default
+```
+
+Questo consente a ogni progetto di avere una configurazione Aider personalizzata:
+
+```
+C:\dev\quoteflow\
+├── .aider.conf.yml   ← se presente, ha la precedenza sulla config del repo centrale
+└── ...
+```
+
+Se un developer vuole ripristinare la configurazione condivisa:
+
+```powershell
+Remove-Item C:\dev\quoteflow\.aider.conf.yml
+# Al prossimo Start-Aider.cmd verrà ricreato dal repo centrale
+```
 
 ```powershell
 cd C:\dev\qualsiasi-progetto
@@ -3287,43 +3337,42 @@ C:\dev\
 └── payments-gateway\                           ← Progetto applicativo 3
 ```
 
-### 30.2 Repository AI tooling (estensione futura)
+### 30.2 Struttura estesa del repository AI tooling
 
 ```
 gargiolastech-ai-tooling/
+├── CHANGELOG.md
+├── .gitignore
 ├── LICENSE
 ├── README.md
-├── CHANGELOG.md                                ← Versioning del launcher
+├── aider/                                        ← Configurazione Aider (corrente)
+│   └── .aider.conf.yml                           ← Copiata nella cwd da Start-Aider.ps1
+├── continue/                                     ← Configurazione Continue (corrente)
+│   └── config.yaml                               ← Copiata in ~/.continue/ da engine
 ├── docs/
-│   └── DOCUMENTATION.md                        ← Documentazione enterprise (corrente)
+│   └── DOCUMENTATION.md                          ← Documentazione enterprise (corrente)
 ├── images/
-│   ├── Icona.ico                               ← Icona launcher (corrente)
-│   └── Icona.png                               ← Asset PNG (corrente)
-├── continue/                                   ← Estensione futura
-│   ├── config.template.json                    ← Template Continue config
-│   └── rules/                                  ← Custom rules per Continue
-│       ├── csharp-style.md
-│       └── dotnet-best-practices.md
-├── aider/                                      ← Estensione futura
-│   ├── .aider.conf.yml.template                ← Template config Aider
-│   └── system-prompts/
-│       └── senior-backend.md
-├── prompts/                                    ← Estensione futura
-│   ├── refactoring/
-│   ├── code-review/
-│   └── documentation/
+│   ├── Icona.ico
+│   └── Icona.png
 ├── scripts/
-│   ├── windows/                                ← Esistenti (Start-AiIde.*, etc.)
-│   ├── linux/                                  ← Future
-│   └── macos/                                  ← Future
+│   └── windows/                                  ← Esistenti
 ├── templates/
-│   ├── projects.json.template                  ← Corrente (schema v2.0 con ides)
-│   └── projects.schema.json                    ← Estensione futura: JSON Schema per validation
-└── .github/
+│   ├── projects.json.template
+│   └── consumer-wrappers/
+│       ├── bootstrap-ai-tooling.cmd
+│       ├── Install-Aider.cmd
+│       └── Start-Aider.cmd
+└── .github/                                      ← Estensione futura
     └── workflows/
-        ├── lint-scripts.yml                    ← PSScriptAnalyzer
-        └── validate-templates.yml              ← Test JSON schema
+        ├── lint-scripts.yml                      ← PSScriptAnalyzer
+        └── validate-templates.yml                ← Test JSON schema
 ```
+
+Estensioni future documentate nella sezione 29:
+
+- `scripts/linux/` e `scripts/macos/` — porting cross-platform.
+- `prompts/` — prompt condivisi per refactoring, code review, documentazione.
+- `templates/projects.schema.json` — JSON Schema per validazione strutturata di `projects.json`.
 
 ---
 
@@ -4572,6 +4621,6 @@ A questi si aggiungono tre principi operativi introdotti nelle versioni successi
 
 ---
 
-**Versione documento:** 2.11 — Sezione 36 Reset e procedura teardown/setup
+**Versione documento:** 3.0 — Configurazioni Aider/Continue a livello root
 **Ultima revisione:** 27 maggio 2026
 **Manutentori:** Platform Engineering Team — GargiolasTech

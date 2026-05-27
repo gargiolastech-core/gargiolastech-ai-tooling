@@ -270,6 +270,33 @@ Write-Host "Aider env:"
 Write-Host $aiderEnvPath
 Write-Host "  (passato esplicitamente ad aider.exe via --env-file dal launcher Start-Aider)"
 
+# ---------------------------------------------------------------
+# Copia config.yaml in ~/.continue/config.yaml.
+# Continue carica la configurazione dei modelli da questo path.
+# Il file sorgente è continue/config.yaml nel repo centrale —
+# unica fonte di verità per i modelli AI disponibili.
+# Viene sovrascritto ad ogni avvio per mantenere la config
+# allineata con l'ultima versione del repo.
+# ---------------------------------------------------------------
+
+$continueConfigSource = [System.IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\continue\config.yaml")
+)
+
+$continueConfigDest = Join-Path $continueEnvDir "config.yaml"
+
+if (Test-Path $continueConfigSource) {
+    Copy-Item -Path $continueConfigSource -Destination $continueConfigDest -Force
+    Write-Host ""
+    Write-Host "Continue config: $continueConfigDest (aggiornata dal repo centrale)"
+} else {
+    Write-Host ""
+    Write-Host "Continue config: non trovata in $continueConfigSource" `
+        -ForegroundColor Yellow
+    Write-Host "  Continue userà la configurazione esistente in ~/.continue/" `
+        -ForegroundColor Yellow
+}
+
 Write-Section "Avvio IDE"
 
 # ---------------------------------------------------------------
