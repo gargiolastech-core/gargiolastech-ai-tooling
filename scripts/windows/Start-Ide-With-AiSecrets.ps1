@@ -185,17 +185,17 @@ Assert-PathExists `
 # ---------------------------------------------------------------
 # Path output per i due file di segreti.
 #
-# Continue (.env): viene scritto in ~/.continue/.env perché è
+# Continue (.env): viene scritto in ~/.continue/.env perche' e'
 # uno dei tre path che il plugin Continue cerca automaticamente
-# (vedi https://docs.continue.dev/faqs — "Secret Resolution").
+# (vedi https://docs.continue.dev/faqs - "Secret Resolution").
 # Le extension IDE di Continue NON leggono env vars di processo,
 # quindi serve necessariamente un file fisico in uno dei path
-# supportati. Si è scelto il path globale per utente per avere
+# supportati. Si e' scelto il path globale per utente per avere
 # un solo punto di configurazione comune a tutti i progetti.
 #
 # Aider: viene scritto in ~/.gargiolastech/ai-tooling/runtime/.
 # Aider riceve esplicitamente il path via `--env-file` dal
-# launcher Start-Aider.ps1, quindi non è vincolato a path
+# launcher Start-Aider.ps1, quindi non e' vincolato a path
 # specifici. Il path runtime resta dentro l'area "effimera"
 # del tooling, separata dalla configurazione Continue.
 # ---------------------------------------------------------------
@@ -206,7 +206,7 @@ $runtimeRoot = Join-Path `
 
 if (Test-Path $runtimeRoot) {
     if (-not (Test-Path $runtimeRoot -PathType Container)) {
-        throw "Il path runtime esiste ma non è una directory: $runtimeRoot. Rimuoverlo manualmente e riprovare."
+        throw "Il path runtime esiste ma non e' una directory: $runtimeRoot. Rimuoverlo manualmente e riprovare."
     }
 } else {
     New-Item `
@@ -219,7 +219,7 @@ $continueEnvDir = Join-Path $env:USERPROFILE ".continue"
 
 if (Test-Path $continueEnvDir) {
     if (-not (Test-Path $continueEnvDir -PathType Container)) {
-        throw "Il path ~/.continue esiste ma non è una directory: $continueEnvDir. Rimuoverlo manualmente e riprovare."
+        throw "Il path ~/.continue esiste ma non e' una directory: $continueEnvDir. Rimuoverlo manualmente e riprovare."
     }
 } else {
     New-Item `
@@ -285,8 +285,8 @@ Write-Host "  (passato esplicitamente ad aider.exe via --env-file dal launcher S
 # ---------------------------------------------------------------
 # Copia config.yaml in ~/.continue/config.yaml.
 # Continue carica la configurazione dei modelli da questo path.
-# Il file sorgente è continue/config.yaml nel repo centrale —
-# unica fonte di verità per i modelli AI disponibili.
+# Il file sorgente e' continue/config.yaml nel repo centrale -
+# unica fonte di verita' per i modelli AI disponibili.
 # Viene sovrascritto ad ogni avvio per mantenere la config
 # allineata con l'ultima versione del repo.
 # ---------------------------------------------------------------
@@ -305,7 +305,7 @@ if (Test-Path $continueConfigSource) {
     Write-Host ""
     Write-Host "Continue config: non trovata in $continueConfigSource" `
         -ForegroundColor Yellow
-    Write-Host "  Continue userà la configurazione esistente in ~/.continue/" `
+    Write-Host "  Continue usera' la configurazione esistente in ~/.continue/" `
         -ForegroundColor Yellow
 }
 
