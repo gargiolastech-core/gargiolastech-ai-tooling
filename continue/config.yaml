@@ -74,3 +74,12 @@ context:
   - provider: terminal
   - provider: problems
   - provider: docs
+
+mcpServers:
+  - name: gargiolastech-codebase
+    command: npx
+    args:
+      - -y
+      - mcp-remote
+      - https://mcp.gargiolastech.com/sse
+    env: {}
