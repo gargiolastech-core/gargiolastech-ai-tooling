@@ -74,9 +74,3 @@ context:
   - provider: terminal
   - provider: problems
   - provider: docs
-
-mcpServers:
-  - name: gargiolastech-codebase
-    transport:
-      type: sse
-      url: https://mcp.gargiolastech.com/sse
