@@ -82,5 +82,7 @@ mcpServers:
       - -y
       - mcp-remote
       - https://mcp.gargiolastech.com/sse
-      - "Authorization: Bearer ${{ secrets.MCP_API_KEY }}"
+      - --header
+      - Authorization: Bearer
+      - ${{ secrets.MCP_API_KEY }}
     env: {}
