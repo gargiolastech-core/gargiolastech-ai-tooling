@@ -77,12 +77,8 @@ context:
 
 mcpServers:
   - name: gargiolastech-codebase
-    command: npx
+    command: cmd
     args:
-      - -y
-      - mcp-remote
-      - https://mcp.gargiolastech.com/sse
-      - --header
-      - Authorization: Bearer
-      - ${{ secrets.MCP_API_KEY }}
+      - /c
+      - %USERPROFILE%\.continue\scripts\start-codebase-mcp.cmd
     env: {}
