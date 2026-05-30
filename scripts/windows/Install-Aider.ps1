@@ -5,6 +5,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+Set-StrictMode -Version Latest
 
 Write-Host "===========================================" -ForegroundColor Cyan
 Write-Host " GargiolasTech Aider Installer" -ForegroundColor Cyan

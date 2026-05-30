@@ -34,8 +34,12 @@ Windows Credential Manager     ← Client ID + Client Secret (bootstrap, one-sho
 | `scripts/windows/Set-InfisicalCredential.ps1` | Scrive Machine Identity Client ID e Client Secret in WCM tramite `cmdkey` |
 | `scripts/windows/Install-Aider.cmd` | Wrapper double-clickable per `Install-Aider.ps1` |
 | `scripts/windows/Install-Aider.ps1` | Provisioner: installa Aider in un virtualenv Python isolato (`~/.venvs/aider-env`) |
+| `scripts/windows/Install-PowerShellProfile.ps1` | Aggiunge la funzione `aider-here` al `$PROFILE` PowerShell — alias globale per `Start-AiderHere.cmd` |
+| `scripts/windows/Uninstall-PowerShellProfile.ps1` | Rimuove il blocco `aider-here` dal `$PROFILE` PowerShell |
 | `scripts/windows/Start-AiIde.cmd` | Entry point per uso quotidiano: seleziona il progetto e avvia l'IDE corrispondente con i segreti AI iniettati |
 | `scripts/windows/Start-AiIde.ps1` | Dispatcher multi-progetto / multi-IDE: legge `projects.json`, valida la configurazione, risolve l'IDE e delega all'engine |
+| `scripts/windows/Start-Aider.cmd` | Wrapper double-clickable per `Start-Aider.ps1` |
+| `scripts/windows/Start-Aider.ps1` | Avvia Aider nella **directory corrente** — nessuna selezione progetto, legge solo i campi root di `projects.json` |
 | `scripts/windows/Start-Ide-With-AiSecrets.ps1` | Engine core IDE-agnostic: legge WCM, autentica con Infisical, esporta i segreti, lancia l'IDE selezionato |
 | `scripts/windows/Install-AiIdeDesktopShortcut.ps1` | Crea collegamento desktop "AI IDE Launcher" con icona dedicata dal repository |
 | `templates/projects.json.template` | Template di configurazione multi-progetto e multi-IDE (copiato automaticamente al primo avvio) |
@@ -61,15 +65,35 @@ Inserire **Client ID** e **Client Secret** della Machine Identity Infisical quan
 Install-Aider.cmd
 ```
 
-Crea un virtualenv Python isolato in `~/.venvs/aider-env` e installa Aider al suo interno. Richiede Python 3.12 con Python Launcher (`py.exe`). Parametri opzionali: `-PythonVersion`, `-VenvPath`, `-ForceRecreate`.
+### 2b. Alias PowerShell `aider-here` (una volta per workstation, opzionale)
 
-### 3. Avvio quotidiano
+```powershell
+.\Install-PowerShellProfile.ps1
+```
+
+Aggiunge `aider-here` al `$PROFILE` PowerShell. Da quel momento, da qualsiasi directory in PowerShell:
+
+```powershell
+cd C:\dev\qualsiasi-repo
+aider-here
+```
+
+### 3. Avvio quotidiano — IDE
 
 ```cmd
 Start-AiIde.cmd
 ```
 
-Il launcher mostra la lista dei progetti configurati e avvia l'IDE associato a ciascun progetto, con i segreti AI iniettati.
+Il launcher mostra la lista dei progetti e avvia l'IDE associato con i segreti AI iniettati.
+
+### 3b. Avvio Aider (da qualsiasi directory)
+
+```cmd
+cd C:\dev\qualsiasi-progetto
+Start-Aider.cmd
+```
+
+**Zero interazione**: nessuna lista, nessuna selezione. Legge solo le credenziali Infisical da `projects.json` e avvia Aider nella directory corrente. Funziona su qualsiasi directory — progetti in `projects.json`, nuovi progetti, directory temporanee.
 
 ### 4. Collegamento desktop (opzionale)
 
@@ -164,6 +188,50 @@ La documentazione tecnica completa è disponibile in [`docs/DOCUMENTATION.md`](d
 - Provisioning automatizzato di Aider in virtualenv isolato (razionale architetturale e operativo)
 - Procedura di rotazione delle credenziali
 - Troubleshooting e FAQ
+
+---
+
+## Utilizzo in altri repository (Git Submodule)
+
+Per usare il launcher AI in qualsiasi repository applicativo senza copiare gli script, aggiungere questo repo come **Git submodule**:
+
+```powershell
+cd C:\dev\tuo-progetto
+
+# Setup automatico: aggiunge submodule + crea i tre thin wrapper
+$url = "https://raw.githubusercontent.com/gargiolastech/gargiolastech-ai-tooling/main/scripts/windows/Add-AiToolingSubmodule.ps1"
+Invoke-WebRequest -Uri $url -OutFile "Add-AiToolingSubmodule.ps1"
+powershell -ExecutionPolicy Bypass -File .\Add-AiToolingSubmodule.ps1
+Remove-Item .\Add-AiToolingSubmodule.ps1
+
+# Commit
+git commit -m "chore: add gargiolastech-ai-tooling submodule"
+```
+
+Nella root del repo consumer vengono creati tre thin wrapper:
+
+```
+tuo-progetto/
+├── bootstrap-ai-tooling.cmd   ← onboarding: credenziali WCM (one-shot)
+├── Install-Aider.cmd          ← onboarding: virtualenv Aider (one-shot)
+├── Start-Aider.cmd            ← uso quotidiano: Aider nella root del repo
+└── gargiolastech-ai-tooling/  ← submodule
+```
+
+Flusso di onboarding per un developer che clona il repo consumer:
+
+```powershell
+git clone --recurse-submodules https://github.com/org/tuo-progetto.git
+cd tuo-progetto
+
+bootstrap-ai-tooling.cmd   # configura credenziali Infisical
+Install-Aider.cmd          # installa Aider nel virtualenv
+Start-Aider.cmd            # avvia Aider (da quel momento, uso quotidiano)
+```
+
+> `Start-AiIde.cmd` **non** va nel repo consumer: l'IDE si avvia dal collegamento desktop del repo centrale.
+
+Per la documentazione completa sul modello di distribuzione vedi [`docs/DOCUMENTATION.md — Sezione 35`](docs/DOCUMENTATION.md#35-distribuzione-via-git-submodule).
 
 ---
 

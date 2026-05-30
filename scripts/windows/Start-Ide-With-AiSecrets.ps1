@@ -19,6 +19,16 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+# ---------------------------------------------------------------
+# Validazione fail-fast: se ProjectId e' ancora il placeholder
+# del template, fermarsi prima di chiamare Infisical (che
+# ritornerebbe un errore criptico).
+# ---------------------------------------------------------------
+
+if ($ProjectId -eq "REPLACE_WITH_INFISICAL_PROJECT_ID") {
+    throw "ProjectId non valorizzato: ancora il placeholder del template. Configurare infisicalProjectId in projects.json."
+}
+
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
@@ -86,8 +96,6 @@ public static class WinCredManager
 }
 "@
 
-# lascia qui invariata tutta la tua classe WinCredManager
-
 function Write-Section {
     param([string] $Title)
 
@@ -136,11 +144,23 @@ function Export-InfisicalEnvFile {
             --projectId $ProjectId `
             --env $Environment `
             --path $path `
-            --format dotenv
+            --format dotenv-export
 
         if ($LASTEXITCODE -ne 0) {
             throw "Errore durante export Infisical per path '$path'."
         }
+
+        # Strip di sicurezza: rimuove apici singoli/doppi
+        # intorno ai valori (KEY='value' -> KEY=value)
+        $quotePattern = "^([^=]+)=([`"'])(.*)\2\s*$"
+        $lines = $content -split "`n" | ForEach-Object {
+            if ($_ -match $quotePattern) {
+                "$($Matches[1])=$($Matches[3])"
+            } else {
+                $_
+            }
+        }
+        $content = $lines -join "`n"
 
         Add-Content -Path $OutputPath -Value ""
         Add-Content -Path $OutputPath -Value "# Path: $path"
@@ -162,25 +182,58 @@ Assert-PathExists `
     -Path $SolutionPath `
     -Description "SolutionPath"
 
+# ---------------------------------------------------------------
+# Path output per i due file di segreti.
+#
+# Continue (.env): viene scritto in ~/.continue/.env perche' e'
+# uno dei tre path che il plugin Continue cerca automaticamente
+# (vedi https://docs.continue.dev/faqs - "Secret Resolution").
+# Le extension IDE di Continue NON leggono env vars di processo,
+# quindi serve necessariamente un file fisico in uno dei path
+# supportati. Si e' scelto il path globale per utente per avere
+# un solo punto di configurazione comune a tutti i progetti.
+#
+# Aider: viene scritto in ~/.gargiolastech/ai-tooling/runtime/.
+# Aider riceve esplicitamente il path via `--env-file` dal
+# launcher Start-Aider.ps1, quindi non e' vincolato a path
+# specifici. Il path runtime resta dentro l'area "effimera"
+# del tooling, separata dalla configurazione Continue.
+# ---------------------------------------------------------------
+
 $runtimeRoot = Join-Path `
     $env:USERPROFILE `
     ".gargiolastech\ai-tooling\runtime"
 
-if (-not (Test-Path $runtimeRoot)) {
+if (Test-Path $runtimeRoot) {
+    if (-not (Test-Path $runtimeRoot -PathType Container)) {
+        throw "Il path runtime esiste ma non e' una directory: $runtimeRoot. Rimuoverlo manualmente e riprovare."
+    }
+} else {
     New-Item `
         -ItemType Directory `
         -Force `
         -Path $runtimeRoot | Out-Null
 }
 
-$continueEnvPath = Join-Path $runtimeRoot "continue.env"
-$aiderEnvPath = Join-Path $runtimeRoot "aider.env"
+$continueEnvDir = Join-Path $env:USERPROFILE ".continue"
 
-# lascia invariati:
-# - lettura Credential Manager
-# - login Infisical
-# - generazione continue.env
-# - generazione aider.env
+if (Test-Path $continueEnvDir) {
+    if (-not (Test-Path $continueEnvDir -PathType Container)) {
+        throw "Il path ~/.continue esiste ma non e' una directory: $continueEnvDir. Rimuoverlo manualmente e riprovare."
+    }
+} else {
+    New-Item `
+        -ItemType Directory `
+        -Force `
+        -Path $continueEnvDir | Out-Null
+}
+
+
+
+
+
+$continueEnvPath = Join-Path $continueEnvDir ".env"
+$aiderEnvPath    = Join-Path $runtimeRoot "aider.env"
 
 $clientId = [WinCredManager]::ReadSecret("$CredentialScope-client-id")
 $clientSecret = [WinCredManager]::ReadSecret("$CredentialScope-client-secret")
@@ -226,50 +279,93 @@ Export-InfisicalEnvFile `
 Write-Host ""
 Write-Host "Continue env:"
 Write-Host $continueEnvPath
+Write-Host "  (letto automaticamente da Continue dal path globale ~/.continue/.env)"
 
 Write-Host ""
 Write-Host "Aider env:"
 Write-Host $aiderEnvPath
+Write-Host "  (passato esplicitamente ad aider.exe via --env-file dal launcher Start-Aider)"
 
-function Import-DotEnvFile {
-    param([string] $Path)
+# ---------------------------------------------------------------
+# Copia config.yaml in ~/.continue/config.yaml.
+# Continue carica la configurazione dei modelli da questo path.
+# Il file sorgente e' continue/config.yaml nel repo centrale -
+# unica fonte di verita' per i modelli AI disponibili.
+# Viene sovrascritto ad ogni avvio per mantenere la config
+# allineata con l'ultima versione del repo.
+# ---------------------------------------------------------------
 
-    if (-not (Test-Path $Path)) {
-        throw "Env file non trovato: $Path"
+$continueConfigSource = [System.IO.Path]::GetFullPath(
+    (Join-Path $PSScriptRoot "..\..\continue\config.yaml")
+)
+
+$continueConfigDest = Join-Path $continueEnvDir "config.yaml"
+
+if (Test-Path $continueConfigSource) {
+
+    $configContent = Get-Content `
+        -Path $continueConfigSource `
+        -Raw
+
+    $mcpApiKeyLine = Get-Content `
+        -Path $continueEnvPath |
+        Where-Object {
+            $_ -match "^(?:export\s+)?MCP_API_KEY="
+        } |
+        Select-Object -First 1
+
+    if (-not $mcpApiKeyLine) {
+        throw "MCP_API_KEY non trovata in $continueEnvPath"
     }
 
-    Get-Content $Path | ForEach-Object {
+    $mcpApiKey = (
+        $mcpApiKeyLine `
+            -replace "^(?:export\s+)?MCP_API_KEY=", ""
+    ).Trim()
 
-        $line = $_.Trim()
+    $mcpApiKey = $mcpApiKey.Trim("'")
+    $mcpApiKey = $mcpApiKey.Trim('"')
 
-        if (
-            [string]::IsNullOrWhiteSpace($line) -or
-            $line.StartsWith("#")
-        ) {
-            return
-        }
-
-        $parts = $line -split "=", 2
-
-        if ($parts.Count -ne 2) {
-            return
-        }
-
-        $key = $parts[0].Trim()
-        $value = $parts[1].Trim()
-
-        [Environment]::SetEnvironmentVariable(
-            $key,
-            $value,
-            "Process"
-        )
+    if ([string]::IsNullOrWhiteSpace($mcpApiKey)) {
+        throw "MCP_API_KEY vuota in $continueEnvPath"
     }
+
+    $configContent = $configContent.Replace(
+        "__MCP_API_KEY__",
+        $mcpApiKey
+    )
+
+    Set-Content `
+        -Path $continueConfigDest `
+        -Value $configContent `
+        -Encoding UTF8
+
+    Write-Host ""
+    Write-Host "Continue config: $continueConfigDest (aggiornata dal repo centrale)"
+    Write-Host "MCP token replacement completato"
+}
+else {
+    Write-Host ""
+    Write-Host "Continue config: non trovata in $continueConfigSource" `
+        -ForegroundColor Yellow
+    Write-Host "  Continue usera' la configurazione esistente in ~/.continue/" `
+        -ForegroundColor Yellow
 }
 
 Write-Section "Avvio IDE"
 
-Import-DotEnvFile -Path $continueEnvPath
-Import-DotEnvFile -Path $aiderEnvPath
+# ---------------------------------------------------------------
+# Niente $env:CONTINUE_ENV_FILE: le IDE extensions di Continue
+# (VS Code, JetBrains) NON leggono env vars del processo. Il
+# file viene letto direttamente dal path ~/.continue/.env.
+#
+# $env:AIDER_ENV_FILE viene comunque settato come hint per
+# eventuali invocazioni dirette di aider.exe dal terminale
+# integrato dell'IDE (es. utenti che hanno script custom che
+# leggono questa variabile).
+# ---------------------------------------------------------------
+
+$env:AIDER_ENV_FILE = $aiderEnvPath
 
 $solutionFiles = @(
     Get-ChildItem `
@@ -293,7 +389,7 @@ else {
     $targetPath = $SolutionPath
 
     Write-Host ""
-    Write-Host "Trovate più solution. Apertura directory per selezione IDE:"
+    Write-Host "Trovate piu' solution. Apertura directory per selezione IDE:"
     foreach ($solution in $solutionFiles) {
         Write-Host "- $($solution.Name)"
     }

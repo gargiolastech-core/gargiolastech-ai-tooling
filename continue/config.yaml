@@ -1,0 +1,110 @@
+name: GargiolasTech AI Workspace
+version: 1.0.0
+schema: v1
+
+models:
+  #
+  # MAIN BACKEND IMPLEMENTATION MODEL
+  #
+  - name: Backend Coder
+    provider: openai
+    model: backend-coder
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      - edit
+      - apply
+      - autocomplete
+
+  #
+  # FAST ITERATION / SMALL TASKS
+  #
+  - name: Fast Coder
+    provider: openai
+    model: fast-coder
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      - summarize
+
+  #
+  # DDD / CQRS / ARCHITECTURE
+  #
+  - name: Architect
+    provider: openai
+    model: architect
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      
+  - name: Principal Architect
+    provider: openai
+    model: principal-architect
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+
+  #
+  # WEB SEARCH / DOCS / BEST PRACTICES
+  #
+  - name: Web Research
+    provider: openai
+    model: web-research
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+
+  #
+  # DEEP INVESTIGATION
+  #
+  - name: Deep Research
+    provider: openai
+    model: deep-research
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    
+  #
+  # LOCAL OLLAMA / LOW-COST CODING MODELS
+  #
+  - name: Local Qwen Coder 3B
+    provider: openai
+    model: local-qwen-coder-3b
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - autocomplete
+      - chat
+
+    
+  - name: Local Qwen Coder 7B
+    provider: openai
+    model: local-qwen-coder-7b
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      - edit
+      - apply
+    
+defaultModel: Architect
+
+context:
+  - provider: code
+  - provider: diff
+  - provider: terminal
+  - provider: problems
+  - provider: docs
+
+mcpServers:
+  - name: gargiolastech-codebase
+    command: npx
+    args:
+      - -y
+      - mcp-remote@latest
+      - https://mcp.gargiolastech.com/sse
+      - --header
+      - "Authorization: Bearer __MCP_API_KEY__"
+    env: {}

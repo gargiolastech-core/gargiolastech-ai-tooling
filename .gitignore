@@ -1,0 +1,35 @@
+# ---------------------------------------------------------------
+# Runtime files (segreti AI generati just-in-time da Infisical).
+# Mai committare: contengono chiavi API attive.
+# ---------------------------------------------------------------
+runtime/
+.aider*
+!.aider.conf.yml
+
+# ---------------------------------------------------------------
+# Configurazione utente generata localmente al primo avvio.
+# Contiene path utente-specifici e Project ID Infisical.
+# ---------------------------------------------------------------
+projects.json
+!projects.json.template
+
+# ---------------------------------------------------------------
+# IDE locali
+# ---------------------------------------------------------------
+.idea/
+.vs/
+*.user
+
+# ---------------------------------------------------------------
+# OS
+# ---------------------------------------------------------------
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# ---------------------------------------------------------------
+# Continue.dev — local secrets file
+# Se per testing si crea un .env qui, non deve essere committato
+# ---------------------------------------------------------------
+.env
+.continue/.env

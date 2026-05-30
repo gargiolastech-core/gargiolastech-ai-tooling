@@ -61,11 +61,18 @@ if errorlevel 1 (
 )
 
 echo.
-echo Bootstrap completed successfully.
+echo Bootstrap completato con successo.
 echo.
-echo You can now start Rider with:
+echo Prossimi passi:
 echo.
-echo   .\Start-Ide-With-AiSecrets.ps1 -ProjectId "^<INFISICAL_PROJECT_ID^>" -CredentialScope "%CREDENTIAL_SCOPE%" -SolutionPath "C:\dev\your-repo"
+echo   1. Installa Aider (se non ancora fatto):
+echo      Install-Aider.cmd
+echo.
+echo   2. Avvia l'IDE con i segreti AI:
+echo      Start-AiIde.cmd
+echo.
+echo   3. Per sessioni Aider standalone:
+echo      Start-Aider.cmd
 echo.
 
 pause

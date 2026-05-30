@@ -17,6 +17,19 @@ if (-not (Test-Path $LauncherPath)) {
     throw "Launcher non trovato: $LauncherPath"
 }
 
+# ---------------------------------------------------------------
+# Verifica anche lo script PowerShell sottostante (il vero
+# target del collegamento desktop). Senza questo check, il
+# collegamento può essere creato puntando a un .cmd che a sua
+# volta fallisce al primo doppio click con errore criptico.
+# ---------------------------------------------------------------
+
+$launcherPs1 = [System.IO.Path]::ChangeExtension($LauncherPath, ".ps1")
+
+if (-not (Test-Path $launcherPs1)) {
+    throw "Script PowerShell sottostante non trovato: $launcherPs1. Il collegamento non funzionerebbe."
+}
+
 $iconPath = Resolve-RepositoryPath "..\..\images\Icona.ico"
 
 if (-not (Test-Path $iconPath)) {
