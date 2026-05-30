@@ -242,7 +242,6 @@ if (Test-Path $continueEnvDir) {
 # ---------------------------------------------------------------
 
 $continueScriptsDir = Join-Path $continueEnvDir "scripts"
-$continueMcpDir     = Join-Path $continueScriptsDir "mcp"
 
 $continueMcpSource = [System.IO.Path]::GetFullPath(
     (Join-Path $PSScriptRoot "mcp")
@@ -252,17 +251,17 @@ if (Test-Path $continueMcpSource) {
     New-Item `
         -ItemType Directory `
         -Force `
-        -Path $continueMcpDir | Out-Null
+        -Path $continueScriptsDir | Out-Null
 
     Copy-Item `
         -Path (Join-Path $continueMcpSource "*") `
-        -Destination $continueMcpDir `
+        -Destination $continueScriptsDir `
         -Recurse `
         -Force
 
     Write-Host ""
     Write-Host "Continue MCP scripts:"
-    Write-Host $continueMcpDir
+    Write-Host $continueScriptsDir
     Write-Host "  (aggiornati dal repo centrale: $continueMcpSource)"
 } else {
     Write-Host ""
@@ -343,10 +342,49 @@ $continueConfigSource = [System.IO.Path]::GetFullPath(
 $continueConfigDest = Join-Path $continueEnvDir "config.yaml"
 
 if (Test-Path $continueConfigSource) {
-    Copy-Item -Path $continueConfigSource -Destination $continueConfigDest -Force
+
+    $configContent = Get-Content `
+        -Path $continueConfigSource `
+        -Raw
+
+    $mcpApiKeyLine = Get-Content `
+        -Path $continueEnvPath |
+        Where-Object {
+            $_ -match "^(?:export\s+)?MCP_API_KEY="
+        } |
+        Select-Object -First 1
+
+    if (-not $mcpApiKeyLine) {
+        throw "MCP_API_KEY non trovata in $continueEnvPath"
+    }
+
+    $mcpApiKey = (
+        $mcpApiKeyLine `
+            -replace "^(?:export\s+)?MCP_API_KEY=", ""
+    ).Trim()
+
+    $mcpApiKey = $mcpApiKey.Trim("'")
+    $mcpApiKey = $mcpApiKey.Trim('"')
+
+    if ([string]::IsNullOrWhiteSpace($mcpApiKey)) {
+        throw "MCP_API_KEY vuota in $continueEnvPath"
+    }
+
+    $configContent = $configContent.Replace(
+        "__MCP_API_KEY__",
+        $mcpApiKey
+    )
+
+    Set-Content `
+        -Path $continueConfigDest `
+        -Value $configContent `
+        -Encoding UTF8
+
     Write-Host ""
     Write-Host "Continue config: $continueConfigDest (aggiornata dal repo centrale)"
-} else {
+    Write-Host "MCP token replacement completato"
+}
+else {
     Write-Host ""
     Write-Host "Continue config: non trovata in $continueConfigSource" `
         -ForegroundColor Yellow
