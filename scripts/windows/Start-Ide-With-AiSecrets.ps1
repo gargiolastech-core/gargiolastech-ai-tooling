@@ -229,47 +229,7 @@ if (Test-Path $continueEnvDir) {
 }
 
 
-# ---------------------------------------------------------------
-# Copia script MCP in ~/.continue/scripts/mcp.
-#
-# Il repository gargiolastech-ai-tooling resta la fonte di verita',
-# mentre ~/.continue diventa la root runtime usata da Continue.
-# In questo modo la configurazione MCP puo' puntare sempre a:
-#
-#   %USERPROFILE%\.continue\scripts\mcp\start-codebase-mcp.cmd
-#
-# senza dipendere dal percorso locale del clone del repository.
-# ---------------------------------------------------------------
 
-$continueScriptsDir = Join-Path $continueEnvDir "scripts"
-
-$continueMcpSource = [System.IO.Path]::GetFullPath(
-    (Join-Path $PSScriptRoot "mcp")
-)
-
-if (Test-Path $continueMcpSource) {
-    New-Item `
-        -ItemType Directory `
-        -Force `
-        -Path $continueScriptsDir | Out-Null
-
-    Copy-Item `
-        -Path (Join-Path $continueMcpSource "*") `
-        -Destination $continueScriptsDir `
-        -Recurse `
-        -Force
-
-    Write-Host ""
-    Write-Host "Continue MCP scripts:"
-    Write-Host $continueScriptsDir
-    Write-Host "  (aggiornati dal repo centrale: $continueMcpSource)"
-} else {
-    Write-Host ""
-    Write-Host "Continue MCP scripts: sorgente non trovata in $continueMcpSource" `
-        -ForegroundColor Yellow
-    Write-Host "  Verificare che gli script siano in scripts/windows/mcp nel repo centrale." `
-        -ForegroundColor Yellow
-}
 
 
 $continueEnvPath = Join-Path $continueEnvDir ".env"

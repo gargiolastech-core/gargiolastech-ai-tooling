@@ -66,6 +66,29 @@ models:
     apiBase: ${{ secrets.LLM_API_URL }}
     apiKey: ${{ secrets.LLM_API_KEY }}
     
+  #
+  # LOCAL OLLAMA / LOW-COST CODING MODELS
+  #
+  - name: Local Qwen Coder 3B
+    provider: openai
+    model: local-qwen-coder-3b
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - autocomplete
+      - chat
+
+    
+  - name: Local Qwen Coder 7B
+    provider: openai
+    model: local-qwen-coder-7b
+    apiBase: ${{ secrets.LLM_API_URL }}
+    apiKey: ${{ secrets.LLM_API_KEY }}
+    roles:
+      - chat
+      - edit
+      - apply
+    
 defaultModel: Architect
 
 context:
