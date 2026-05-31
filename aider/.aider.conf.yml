@@ -28,8 +28,8 @@
 #
 
 model: openai/architect
-editor-model: openai/backend-coder
-weak-model: openai/fast-coder
+editor-model: openai/local-qwen-coder-7b
+weak-model: openai/local-qwen-coder-3b
 
 #
 # ARCHITECT MODE
